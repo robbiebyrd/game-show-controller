@@ -1,7 +1,7 @@
 # Game Show Control System — Design Spec
 
 **Date:** 2026-05-28  
-**Status:** Approved
+**Status:** Approved (rev 3)
 
 ---
 
@@ -17,7 +17,7 @@ A Python background service (no UI) that acts as the central nervous system for 
 
 ## Architecture
 
-Event-driven single-process architecture. Six components communicate through a central asyncio event bus. No component calls another directly.
+Event-driven single-process architecture. Seven components communicate through a central asyncio event bus. No component calls another directly.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -59,35 +59,51 @@ Event-driven single-process architecture. Six components communicate through a c
 |---|---|
 | `IDLE` | Waiting for any buzz |
 | `LOCKED` | A player has buzzed in; all other buzzers blocked |
-| `ALLOW_NEXT` | Last player locked out; remaining players may buzz |
+| `ALLOW_NEXT` | Last player locked out; remaining enabled players may buzz |
 | `CORRECT` | Transient; auto-returns to configured state after hold duration |
 | `INCORRECT` | Transient; auto-returns to configured state after hold duration |
-| `BUZZ_TIMEOUT` | Transient; fires when LOCKED timer expires without host input |
+| `BUZZ_TIMEOUT` | Transient; fires when LOCKED timer expires without host input; auto-returns to configured state |
 | `TIMED_LOCKOUT` | All buzzers disabled for a configured duration; auto-returns to IDLE |
-| `ROUND_START` | Transient; auto-returns to IDLE after hold duration |
+| `ROUND_START` | Transient; auto-returns to configured state after hold duration |
 | `GAME_OVER` | Terminal; only exits via explicit `/buzzer/clear` |
 
 ### Transitions
 
 ```
-IDLE ──(first buzz)──► LOCKED
-LOCKED ──(correct)──► CORRECT ──(auto)──► [configured return state]
-LOCKED ──(incorrect)──► INCORRECT ──(auto)──► [configured return state]
+IDLE ──(first buzz from any enabled player)──► LOCKED
+LOCKED ──(correct)──► CORRECT ──(auto)──► [return_to_after_correct]
+LOCKED ──(incorrect)──► INCORRECT ──(auto)──► [return_to_after_incorrect]
 LOCKED ──(allow_next)──► ALLOW_NEXT
-LOCKED ──(buzz_timeout_seconds expires)──► BUZZ_TIMEOUT ──(auto)──► [configured return state]
-ALLOW_NEXT ──(next buzz)──► LOCKED
+LOCKED ──(buzz_timeout_seconds expires)──► BUZZ_TIMEOUT ──(auto)──► [return_to_after_buzz_timeout]
+ALLOW_NEXT ──(buzz from non-banned enabled player)──► LOCKED
+ALLOW_NEXT ──(no eligible players remain)──► IDLE  [auto, see ALLOW_NEXT exhaustion rule]
 ANY ──(clear)──► IDLE
 ANY ──(timed_lockout t)──► TIMED_LOCKOUT ──(timer)──► IDLE
-ANY ──(round_start)──► ROUND_START ──(auto)──► IDLE
+ANY ──(round_start)──► ROUND_START ──(auto)──► [return_to_after_round_start]
 ANY ──(game_over)──► GAME_OVER ──(clear only)──► IDLE
 ```
 
 ### Rules
 
 - Only the **first** press in `IDLE` or `ALLOW_NEXT` triggers a lock; all others are silently dropped
-- `BUZZ_TIMEOUT` is optional — disabled when `buzz_timeout_seconds` is null
+- `BUZZ_TIMEOUT` is optional — disabled when `buzz_timeout_seconds` is null. When disabled, `buzz_timeout_hold_seconds` and `return_to_after_buzz_timeout` are present in config but ignored
 - The buzz timeout timer is cancelled immediately if the host sends Correct / Incorrect / Allow Next
 - Transient states (`CORRECT`, `INCORRECT`, `BUZZ_TIMEOUT`, `ROUND_START`) hold for a configurable duration then auto-return
+- **ALLOW_NEXT exhaustion:** each `allow_next` command adds the currently locked player to a banned set. The "currently enabled" set is evaluated at the moment `allow_next` is issued. When the banned set contains all players that were enabled at that moment, the state machine automatically transitions to `IDLE` and the banned set is cleared
+- **Valid `return_to_after_*` values:** only `idle` and `allow_next` are legal return targets. Transient states (`correct`, `incorrect`, `buzz_timeout`, `round_start`) and terminal states (`game_over`) are not valid return targets and will raise a config validation error at startup
+
+### Player Buzz Events vs. State Change Events
+
+When a player presses their buzzer, the state machine emits **two sequential events**:
+
+1. `PlayerBuzzed(player_id)` — immediate; triggers player-specific lighting and audio cues (the `player_N_buzz` keys in `lighting.states` and `audio.states`)
+2. `StateChanged(LOCKED, player_id)` — triggers the generic `locked` cues
+
+This means a player buzzing in fires their colour/sound immediately (`player_1_buzz` → blue flash + buzz sound), and separately activates the locked-state cue. The `locked` key in `lighting.states` and `obs.states` covers the general lockout visual; `player_N_buzz` covers the player-specific announcement. Both fire every time a player buzzes in.
+
+### Timed Lockout Feedback
+
+When `TIMED_LOCKOUT` activates, the service broadcasts `/feedback/timed_lockout/duration <float>` (the configured duration in seconds) so TouchOSC can display a countdown. The state auto-return fires the normal `/feedback/state idle` message.
 
 ---
 
@@ -95,19 +111,35 @@ ANY ──(game_over)──► GAME_OVER ──(clear only)──► IDLE
 
 A show rundown is an ordered list of scenes. Each scene deep-merges over root-level defaults — any key not specified in a scene falls back to the global config.
 
-### Scene Manager OSC Commands
+### Deep-Merge Rules
 
-| Address | Args | Action |
-|---|---|---|
-| `/show/advance` | — | Next scene |
-| `/show/previous` | — | Previous scene |
-| `/show/goto` | `int` index | Go to scene by 1-based index |
-| `/show/goto` | `string` name | Go to scene by name |
-| `/show/current` | — | Broadcast current scene info back |
+- **Scalar fields** (strings, numbers, booleans, null) replace the global value entirely
+- **Mapping fields** (e.g. `lighting.states`, `obs.states`, `audio.states`) are merged key-by-key; a scene only needs to specify the keys it overrides
+- **`buzzers.players` list** merges by `id`: a scene entry with `id: 2` overrides only the fields specified for player 2; all other players retain their global values
+- **`buzzers.all_enabled`** is a boolean shorthand that sets the `enabled` field on all players simultaneously. It is applied before any per-player overrides in the same scene block
+- **`on_enter.lighting`** is a one-shot OSC address fired once when the scene activates. It is not merged into `lighting.states` and does not affect per-state lighting behaviour
+
+### Scene Navigation
+
+| Address | Args | Action | Error behaviour |
+|---|---|---|---|
+| `/show/advance` | — | Next scene | At last scene: log warning, stay on last scene |
+| `/show/previous` | — | Previous scene | At first scene: log warning, stay on first scene |
+| `/show/goto` | `int` index | Go to scene by 1-based index | Out of range: log warning, ignore |
+| `/show/goto` | `string` name | Go to scene by name | Name not found: log warning, ignore |
+| `/show/current` | — | Broadcast current scene info back | — |
 
 ### on_enter
 
-Each scene may define an `on_enter` block that fires automatically when the scene activates: plays a background track, sets an OBS scene, and/or fires a lighting cue.
+Each scene may define an `on_enter` block that fires automatically when the scene activates:
+
+| Key | Type | Effect |
+|---|---|---|
+| `audio_background` | `string` path | Stops any currently playing background track, then starts the named file |
+| `obs_scene` | `string` scene name | Switches OBS to the named scene |
+| `lighting` | `string` OSC address | Fires a single OSC message to the DMX server |
+
+`on_enter.audio_background` always restarts playback — it is not idempotent. If the same file is already playing, it restarts from the beginning.
 
 ---
 
@@ -117,13 +149,13 @@ Each scene may define an `on_enter` block that fires automatically when the scen
 
 | Address | Args | Action |
 |---|---|---|
-| `/buzzer/clear` | — | Clear all locks → IDLE |
+| `/buzzer/clear` | — | Clear all locks and bans → IDLE |
 | `/buzzer/allow_next` | — | Lock last player, allow others |
 | `/buzzer/correct` | — | Trigger CORRECT state |
 | `/buzzer/incorrect` | — | Trigger INCORRECT state |
 | `/buzzer/round_start` | — | Trigger ROUND_START state |
 | `/buzzer/game_over` | — | Trigger GAME_OVER state |
-| `/buzzer/timed_lockout` | `float` seconds | Trigger TIMED_LOCKOUT |
+| `/buzzer/timed_lockout` | `float` seconds | Trigger TIMED_LOCKOUT for given duration |
 | `/show/advance` | — | Next scene |
 | `/show/previous` | — | Previous scene |
 | `/show/goto` | `int` or `string` | Go to scene by index or name |
@@ -142,6 +174,7 @@ Each scene may define an `on_enter` block that fires automatically when the scen
 | `/feedback/state` | `string` state | On every state change |
 | `/feedback/player` | `int` id, `string` name | When a player buzzes in |
 | `/feedback/scene` | `int` index, `string` name | On show scene change |
+| `/feedback/timed_lockout/duration` | `float` seconds | When TIMED_LOCKOUT activates |
 | `/feedback/audio/background/state` | `string` playing\|stopped | On background track start/stop |
 | `/feedback/audio/background/track` | `string` filename | On background track change |
 | `/feedback/audio/effect/state` | `string` playing\|stopped | On effect start/stop |
@@ -151,6 +184,22 @@ Each scene may define an `on_enter` block that fires automatically when the scen
 ### Outbound — DMX Lighting Server (port 21600)
 
 Fully driven by `lighting.states` config mappings. No hardcoded OSC addresses in code.
+
+---
+
+## Error Handling
+
+### OBS Connection
+
+- At startup, the OBS client attempts to connect with exponential backoff (initial 1s, max 30s, unlimited retries)
+- If OBS is unreachable, the service starts normally; OBS scene switching is silently skipped until connection is established
+- If the connection drops mid-show, the client resumes retry loop automatically; no other subsystem is affected
+- Connection status is logged at INFO level on each retry attempt
+
+### Other Subsystems
+
+- If the DMX server is unreachable, OSC send failures are logged at WARNING level and the show continues
+- If an audio file is missing or unreadable, the error is logged at ERROR level and playback for that event is skipped
 
 ---
 
@@ -165,9 +214,14 @@ service:
   obs_host: "localhost"
   obs_port: 4455
   obs_password: "your-password-here"
+  # Host and port of the TouchOSC device for outbound feedback messages
+  touchosc_host: "192.168.1.100"
+  touchosc_port: 9000
 
 buzzers:
-  buzz_timeout_seconds: 10.0   # null to disable globally
+  # buzz_timeout_seconds may be overridden per-scene (scalar-replace rule).
+  # When null, buzz_timeout_hold_seconds and return_to_after_buzz_timeout are ignored.
+  buzz_timeout_seconds: 10.0
   players:
     - id: 1
       name: "Player 1"
@@ -187,20 +241,25 @@ buzzers:
       enabled: false
 
 state_machine:
+  # Valid return_to_after_* values: idle, allow_next only.
+  # Transient or terminal states are not valid targets (raises config error at startup).
+  # All state_machine keys may be overridden per-scene (scalar-replace deep-merge).
   return_to_after_correct: idle
   return_to_after_incorrect: idle
   return_to_after_buzz_timeout: idle
+  return_to_after_round_start: idle
   correct_hold_seconds: 2.0
   incorrect_hold_seconds: 2.0
   buzz_timeout_hold_seconds: 3.0
+  round_start_hold_seconds: 2.0
 
 lighting:
   states:
     idle:          "/palette/Idle/activate"
     player_1_buzz: "/palette/Buzz_P1/start"
     player_2_buzz: "/palette/Buzz_P2/start"
-    player_3_buzz: "/palette/Buzz_P3/start"
-    player_4_buzz: "/palette/Buzz_P4/start"
+    player_3_buzz: "/palette/Buzz_P3/start"   # used if player 3 is enabled
+    player_4_buzz: "/palette/Buzz_P4/start"   # used if player 4 is enabled
     locked:        "/palette/Locked/activate"
     correct:       "/palette/Correct/start"
     incorrect:     "/palette/Incorrect/start"
@@ -214,6 +273,8 @@ audio:
   default_background_volume: 0.7
   default_effect_volume: 1.0
   states:
+    # Audio states only need entries for enabled players.
+    # Add player_3_buzz / player_4_buzz here when enabling those players.
     player_1_buzz:
       effect: "sounds/buzz_p1.mp3"
     player_2_buzz:
@@ -247,19 +308,19 @@ show:
       on_enter:
         audio_background: "music/intro_theme.mp3"
         obs_scene: "Intro_Screen"
-        lighting: "/palette/Intro/activate"
+        lighting: "/palette/Intro/activate"   # one-shot cue; not merged into lighting.states
       buzzers:
-        all_enabled: false
+        all_enabled: false   # shorthand: sets enabled: false on all players
 
     - name: "Face Off"
       on_enter:
         obs_scene: "FaceOff_Ready"
         lighting: "/palette/FaceOff/activate"
       buzzers:
-        buzz_timeout_seconds: null
+        buzz_timeout_seconds: null   # disable timeout for face-off
       lighting:
         states:
-          locked: "/palette/FaceOff_Buzz/start"
+          locked: "/palette/FaceOff_Buzz/start"   # overrides global locked cue only
       obs:
         states:
           locked: "FaceOff_Buzz"
@@ -270,7 +331,7 @@ show:
         audio_background: "music/round1_theme.mp3"
         obs_scene: "Round1_Board"
       state_machine:
-        return_to_after_incorrect: allow_next
+        return_to_after_incorrect: allow_next   # wrong answer gives other players a chance
       buzzers:
         buzz_timeout_seconds: 8.0
 ```
@@ -294,7 +355,7 @@ gameshow/
 │   ├── osc_server.py       # inbound OSC (TouchOSC + scene commands)
 │   ├── dmx_client.py       # outbound OSC → DMX lighting server
 │   ├── audio.py            # pygame.mixer two-channel playback
-│   └── obs_client.py       # obsws-python OBS WebSocket v5 client
+│   └── obs_client.py       # simpleobsws OBS WebSocket v5 client
 ├── sounds/
 ├── music/
 ├── tests/
@@ -302,7 +363,10 @@ gameshow/
 │   ├── test_bus.py
 │   ├── test_state_machine.py
 │   ├── test_scene_manager.py
-│   └── test_osc_server.py
+│   ├── test_osc_server.py
+│   ├── test_dmx_client.py
+│   ├── test_audio.py
+│   └── test_obs_client.py
 └── requirements.txt
 ```
 
@@ -316,4 +380,4 @@ gameshow/
 | `pynput` | Global keyboard capture (macOS + Windows) |
 | `python-osc` | OSC server + DMX client |
 | `pygame` | Two-channel audio playback |
-| `obsws-python` | OBS WebSocket v5 client |
+| `simpleobsws` | OBS WebSocket v5 client (actively maintained) |
