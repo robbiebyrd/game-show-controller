@@ -27,6 +27,7 @@ class OSCServer:
     def __init__(self, bus: EventBus, config: Callable[[], AppConfig]) -> None:
         self._bus = bus
         self._config = config
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._transport = None
         self._protocol = None
         self._feedback_client: SimpleUDPClient | None = None
