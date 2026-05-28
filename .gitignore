@@ -5,6 +5,9 @@ stories/archive
 .DS_Store
 **/.DS_Store
 
+# Video assets (large binaries)
+videos/
+
 # Python
 __pycache__/
 **/__pycache__/
