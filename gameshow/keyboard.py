@@ -40,6 +40,6 @@ class KeyboardListener:
         self._listener = keyboard.Listener(on_press=self._handle_key)
         self._listener.start()
 
-    async def stop(self) -> None:
+    def stop(self) -> None:
         if self._listener:
             self._listener.stop()

@@ -1,6 +1,4 @@
-import asyncio
 import pytest
-from unittest.mock import MagicMock, patch
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig, BuzzerConfig, PlayerConfig, ServiceConfig, StateMachineConfig, LightingConfig, AudioConfig, OBSConfig
 from gameshow.events import BuzzerPressed
