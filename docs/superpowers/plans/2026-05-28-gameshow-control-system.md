@@ -260,6 +260,12 @@ def test_state_changed_carries_optional_player():
     e2 = StateChanged(new_state=GameState.IDLE)
     assert e2.player_id is None
 
+def test_state_changed_carries_optional_duration():
+    e = StateChanged(new_state=GameState.TIMED_LOCKOUT, duration=7.5)
+    assert e.duration == 7.5
+    e2 = StateChanged(new_state=GameState.IDLE)
+    assert e2.duration is None
+
 def test_control_command_stores_args():
     e = ControlCommand(command="timed_lockout", args=(5.0,))
     assert e.args == (5.0,)
@@ -308,6 +314,7 @@ class PlayerBuzzed:
 class StateChanged:
     new_state: GameState
     player_id: Optional[int] = None
+    duration: Optional[float] = None  # set for TIMED_LOCKOUT; carries duration seconds
 
 
 @dataclass(frozen=True)
@@ -1224,7 +1231,9 @@ class StateMachine:
 
         if cmd == "timed_lockout":
             duration = float(event.args[0]) if event.args else 5.0
-            await self._enter_state(GameState.TIMED_LOCKOUT)
+            self._cancel_timer()
+            self.state = GameState.TIMED_LOCKOUT
+            await self._bus.publish(StateChanged(new_state=GameState.TIMED_LOCKOUT, duration=duration))
             self._timer = asyncio.create_task(self._auto_return(duration, "idle"))
             return
 
@@ -1776,8 +1785,8 @@ class OSCServer:
 
     async def _on_state_changed(self, event: StateChanged) -> None:
         self._feedback("/feedback/state", event.new_state.name.lower())
-        if event.new_state.name.lower() == "timed_lockout":
-            pass  # duration sent separately by state machine caller
+        if event.new_state == GameState.TIMED_LOCKOUT and event.duration is not None:
+            self._feedback("/feedback/timed_lockout/duration", event.duration)
 
     async def _on_player_buzzed(self, event: PlayerBuzzed) -> None:
         self._feedback("/feedback/player", event.player_id, event.player_name)
@@ -1812,10 +1821,11 @@ class OSCServer:
 
     def _make_handler(self, address: str) -> Callable:
         def handler(addr: str, *args: Any) -> None:
-            asyncio.get_event_loop().create_task(self._dispatch(address, list(args)))
+            self._loop.create_task(self._dispatch(address, list(args)))
         return handler
 
     async def start(self) -> None:
+        self._loop = asyncio.get_running_loop()
         cfg = self._config().service
         dispatcher = Dispatcher()
         for address in list(_SIMPLE_COMMANDS.keys()) + [
@@ -1827,7 +1837,7 @@ class OSCServer:
             dispatcher.map(address, self._make_handler(address))
 
         server = AsyncIOOSCUDPServer(
-            (cfg.osc_server_host, cfg.osc_server_port), dispatcher, asyncio.get_event_loop()
+            (cfg.osc_server_host, cfg.osc_server_port), dispatcher, self._loop
         )
         self._transport, self._protocol = await server.create_serve_endpoint()
 
@@ -1937,7 +1947,7 @@ from typing import Callable
 from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
-from gameshow.events import StateChanged, PlayerBuzzed
+from gameshow.events import StateChanged, PlayerBuzzed, ControlCommand
 
 
 class DMXClient:
@@ -1947,6 +1957,7 @@ class DMXClient:
         self._client = SimpleUDPClient(svc.dmx_osc_host, svc.dmx_osc_port)
         bus.subscribe(StateChanged, self._on_state_changed)
         bus.subscribe(PlayerBuzzed, self._on_player_buzzed)
+        bus.subscribe(ControlCommand, self._on_control_command)
 
     def _send(self, address: str) -> None:
         self._client.send_message(address, [])
@@ -1963,6 +1974,10 @@ class DMXClient:
         cue = states.get(key)
         if cue:
             self._send(cue)
+
+    async def _on_control_command(self, event: ControlCommand) -> None:
+        if event.command == "dmx_cue" and event.args:
+            self._send(str(event.args[0]))
 ```
 
 - [ ] **Step 4: Run tests to verify passing**
@@ -2089,6 +2104,7 @@ from typing import Callable
 import pygame
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
+from pythonosc.udp_client import SimpleUDPClient
 from gameshow.events import StateChanged, PlayerBuzzed, ControlCommand
 
 _BG_CHANNEL = 0
@@ -2101,15 +2117,23 @@ class AudioEngine:
         pygame.mixer.init()
         self._bg = pygame.mixer.Channel(_BG_CHANNEL)
         self._fx = pygame.mixer.Channel(_FX_CHANNEL)
+        svc = config().service
+        self._feedback_client = SimpleUDPClient(svc.touchosc_host, svc.touchosc_port) if svc.touchosc_host else None
         bus.subscribe(StateChanged, self._on_state_changed)
         bus.subscribe(PlayerBuzzed, self._on_player_buzzed)
         bus.subscribe(ControlCommand, self._on_control_command)
+
+    def _feedback(self, address: str, *args) -> None:
+        if self._feedback_client:
+            self._feedback_client.send_message(address, list(args))
 
     def _play_effect(self, path: str) -> None:
         sound = pygame.mixer.Sound(path)
         cfg = self._config().audio
         self._fx.set_volume(cfg.default_effect_volume)
         self._fx.play(sound)
+        self._feedback("/feedback/audio/effect/state", "playing")
+        self._feedback("/feedback/audio/effect/track", path)
 
     def _play_background(self, path: str) -> None:
         sound = pygame.mixer.Sound(path)
@@ -2117,6 +2141,8 @@ class AudioEngine:
         self._bg.stop()
         self._bg.set_volume(cfg.default_background_volume)
         self._bg.play(sound, loops=-1)
+        self._feedback("/feedback/audio/background/state", "playing")
+        self._feedback("/feedback/audio/background/track", path)
 
     def _handle_audio_state(self, state_key: str) -> None:
         entry = self._config().audio.states.get(state_key)
@@ -2136,8 +2162,10 @@ class AudioEngine:
     async def _on_control_command(self, event: ControlCommand) -> None:
         if event.command == "audio_bg_stop":
             self._bg.stop()
+            self._feedback("/feedback/audio/background/state", "stopped")
         elif event.command == "audio_fx_stop":
             self._fx.stop()
+            self._feedback("/feedback/audio/effect/state", "stopped")
         elif event.command == "audio_background_play" and event.args:
             self._play_background(str(event.args[0]))
         elif event.command == "audio_effect_play" and event.args:
@@ -2256,9 +2284,10 @@ import asyncio
 import logging
 from typing import Callable, Optional
 import simpleobsws
+from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
-from gameshow.events import StateChanged
+from gameshow.events import StateChanged, ControlCommand
 
 log = logging.getLogger(__name__)
 
@@ -2272,7 +2301,9 @@ class OBSClient:
             url=f"ws://{svc.obs_host}:{svc.obs_port}",
             password=svc.obs_password,
         )
+        self._feedback_client = SimpleUDPClient(svc.touchosc_host, svc.touchosc_port) if svc.touchosc_host else None
         bus.subscribe(StateChanged, self._on_state_changed)
+        bus.subscribe(ControlCommand, self._on_control_command)
 
     async def _on_state_changed(self, event: StateChanged) -> None:
         if not self._connected:
@@ -2308,7 +2339,18 @@ class OBSClient:
     async def _on_obs_event(self, event: simpleobsws.Event) -> None:
         if event.eventType == "CurrentProgramSceneChanged":
             scene_name = event.eventData.get("sceneName", "")
-            log.debug("OBS scene changed externally: %s", scene_name)
+            log.debug("OBS scene changed: %s", scene_name)
+            if self._feedback_client:
+                self._feedback_client.send_message("/feedback/obs/scene", [scene_name])
+
+    async def _on_control_command(self, event: ControlCommand) -> None:
+        if event.command == "obs_scene_set" and event.args and self._connected:
+            scene_name = str(event.args[0])
+            try:
+                req = simpleobsws.Request("SetCurrentProgramScene", {"sceneName": scene_name})
+                await self._ws.call(req)
+            except Exception as exc:
+                log.warning("OBS scene set failed: %s", exc)
 
     async def stop(self) -> None:
         if self._connected:
@@ -2377,6 +2419,22 @@ async def main() -> None:
     DMXClient(bus, config_fn)
     AudioEngine(bus, config_fn)
     obs_client = OBSClient(bus, config_fn)
+
+    # Wire on_enter actions when a scene activates.
+    # DMXClient handles "dmx_cue"; OBSClient handles "obs_scene_set".
+    async def on_scene_changed(event: SceneChanged) -> None:
+        scene = next((s for s in base_config.scenes if s.name == event.name), None)
+        if not scene or not scene.on_enter:
+            return
+        oe = scene.on_enter
+        if oe.audio_background:
+            await bus.publish(ControlCommand(command="audio_background_play", args=(oe.audio_background,)))
+        if oe.obs_scene:
+            await bus.publish(ControlCommand(command="obs_scene_set", args=(oe.obs_scene,)))
+        if oe.lighting:
+            await bus.publish(ControlCommand(command="dmx_cue", args=(oe.lighting,)))
+
+    bus.subscribe(SceneChanged, on_scene_changed)
 
     # Wire scene commands from OSC to SceneManager
     async def on_control(event: ControlCommand) -> None:
