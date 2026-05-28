@@ -73,4 +73,5 @@ class OBSClient:
 
     async def stop(self) -> None:
         if self._connected:
+            self._connected = False
             await self._ws.disconnect()
