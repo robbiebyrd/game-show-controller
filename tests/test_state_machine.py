@@ -56,10 +56,6 @@ async def test_idle_buzz_emits_player_buzzed_and_state_changed_locked():
     sm = StateMachine(bus, lambda: config)
     await sm.start()
 
-    events = []
-    bus.subscribe(PlayerBuzzed, lambda e: events.append(e) or asyncio.sleep(0))
-    bus.subscribe(StateChanged, lambda e: events.append(e) or asyncio.sleep(0))
-
     published = []
     async def capture(e): published.append(e)
     bus.subscribe(PlayerBuzzed, capture)
