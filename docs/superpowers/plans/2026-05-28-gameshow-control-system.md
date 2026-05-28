@@ -335,7 +335,7 @@ class ControlCommand:
 pytest tests/test_events.py -v
 ```
 
-Expected: 4 passed.
+Expected: 5 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -464,7 +464,7 @@ import textwrap
 import yaml
 from gameshow.config import (
     parse_config, deep_merge, apply_scene_override,
-    AppConfig, GameState,
+    AppConfig,
 )
 
 MINIMAL_YAML = textwrap.dedent("""\
@@ -1431,10 +1431,13 @@ pytest tests/test_scene_manager.py -v
 
 ```python
 from __future__ import annotations
+import logging
 from typing import Optional
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig, SceneConfig, parse_config, apply_scene_override
 from gameshow.events import SceneChanged
+
+log = logging.getLogger(__name__)
 
 
 class SceneManager:
@@ -1454,16 +1457,19 @@ class SceneManager:
 
     async def advance(self) -> None:
         if self.current_index >= len(self._scenes):
+            log.warning("Already at last scene; advance ignored")
             return
         await self.goto_index(self.current_index + 1)
 
     async def previous(self) -> None:
         if self.current_index <= 1:
+            log.warning("Already at first scene; previous ignored")
             return
         await self.goto_index(self.current_index - 1)
 
     async def goto_index(self, index: int) -> None:
         if index < 1 or index > len(self._scenes):
+            log.warning("Scene index %d out of range (1–%d); ignored", index, len(self._scenes))
             return
         self.current_index = index
         scene = self._scenes[index - 1]
@@ -1475,6 +1481,7 @@ class SceneManager:
             if scene.name == name:
                 await self.goto_index(i)
                 return
+        log.warning("Scene name %r not found; ignored", name)
 
     def _apply(self, scene: SceneConfig) -> None:
         merged_raw = apply_scene_override(self._base_raw, scene._raw_override)
@@ -1743,7 +1750,7 @@ from pythonosc.osc_server import AsyncIOOSCUDPServer
 from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
-from gameshow.events import ControlCommand, SceneChanged, StateChanged, PlayerBuzzed, SceneChanged
+from gameshow.events import ControlCommand, SceneChanged, StateChanged, PlayerBuzzed, GameState
 
 _SIMPLE_COMMANDS = {
     "/buzzer/clear": "clear",
@@ -2395,7 +2402,7 @@ from gameshow.osc_server import OSCServer
 from gameshow.dmx_client import DMXClient
 from gameshow.audio import AudioEngine
 from gameshow.obs_client import OBSClient
-from gameshow.events import ControlCommand
+from gameshow.events import ControlCommand, SceneChanged
 
 logging.basicConfig(
     level=logging.INFO,
@@ -2447,12 +2454,10 @@ async def main() -> None:
         elif event.command == "scene_goto_name" and event.args:
             await scene_manager.goto_name(str(event.args[0]))
         elif event.command == "scene_current":
-            await bus.publish(
-                __import__("gameshow.events", fromlist=["SceneChanged"]).SceneChanged(
-                    index=scene_manager.current_index,
-                    name=scene_manager.current_scene_name or "",
-                )
-            )
+            await bus.publish(SceneChanged(
+                index=scene_manager.current_index,
+                name=scene_manager.current_scene_name or "",
+            ))
 
     bus.subscribe(ControlCommand, on_control)
 
