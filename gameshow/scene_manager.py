@@ -31,7 +31,7 @@ class SceneManager:
 
     async def previous(self) -> None:
         if self.current_index <= 1:
-            log.warning("Already at first scene; previous ignored")
+            log.warning("No scene active or already at first scene; previous ignored")
             return
         await self.goto_index(self.current_index - 1)
 

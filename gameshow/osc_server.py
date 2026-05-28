@@ -95,9 +95,8 @@ class OSCServer:
         dispatcher = Dispatcher()
         for address in list(_SIMPLE_COMMANDS.keys()) + [
             "/buzzer/timed_lockout", "/show/goto",
-            "/audio/background/play", "/audio/background/stop",
-            "/audio/background/volume", "/audio/effect/play",
-            "/audio/effect/stop", "/audio/effect/volume",
+            "/audio/background/play", "/audio/background/volume",
+            "/audio/effect/play", "/audio/effect/volume",
         ]:
             dispatcher.map(address, self._make_handler(address))
 

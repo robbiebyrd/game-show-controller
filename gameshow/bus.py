@@ -1,4 +1,7 @@
+import logging
 from typing import Any, Callable, Awaitable
+
+log = logging.getLogger(__name__)
 
 
 class EventBus:
@@ -10,4 +13,7 @@ class EventBus:
 
     async def publish(self, event: Any) -> None:
         for handler in self._subscribers.get(type(event), []):
-            await handler(event)
+            try:
+                await handler(event)
+            except Exception:
+                log.exception("Handler %s raised for event %s", handler, type(event).__name__)

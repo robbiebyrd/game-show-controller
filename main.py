@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import signal
-import sys
 from gameshow.config import load_config
 from gameshow.bus import EventBus
 from gameshow.state_machine import StateMachine
@@ -85,8 +84,9 @@ async def main() -> None:
     await stop_event.wait()
 
     log.info("Shutting down...")
-    keyboard.stop()
+    await keyboard.stop()
     await state_machine.stop()
+    await osc_server.stop()
     await obs_client.stop()
 
 
