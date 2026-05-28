@@ -1,7 +1,7 @@
 # Game Show Control System — Design Spec
 
 **Date:** 2026-05-28  
-**Status:** Approved (rev 3)
+**Status:** Approved (rev 4)
 
 ---
 
@@ -90,6 +90,10 @@ ANY ──(game_over)──► GAME_OVER ──(clear only)──► IDLE
 - The buzz timeout timer is cancelled immediately if the host sends Correct / Incorrect / Allow Next
 - Transient states (`CORRECT`, `INCORRECT`, `BUZZ_TIMEOUT`, `ROUND_START`) hold for a configurable duration then auto-return
 - **ALLOW_NEXT exhaustion:** each `allow_next` command adds the currently locked player to a banned set. The "currently enabled" set is evaluated at the moment `allow_next` is issued. When the banned set contains all players that were enabled at that moment, the state machine automatically transitions to `IDLE` and the banned set is cleared
+- **`allow_next` outside LOCKED:** if `/buzzer/allow_next` is received while not in `LOCKED` state, it is silently ignored
+- **`correct` and `incorrect`** are only valid from `LOCKED` state; received in any other state, they are silently ignored
+- **ANY-transition timer cancellation:** when an `ANY`-transition (`clear`, `timed_lockout`, `round_start`, `game_over`) fires while a transient state's auto-return timer is running, the timer is cancelled before entering the new state. No ghost timer fires after the transition
+- **`TIMED_LOCKOUT` always returns to `IDLE`** — no `return_to_after_timed_lockout` config key exists; this is intentional
 - **Valid `return_to_after_*` values:** only `idle` and `allow_next` are legal return targets. Transient states (`correct`, `incorrect`, `buzz_timeout`, `round_start`) and terminal states (`game_over`) are not valid return targets and will raise a config validation error at startup
 
 ### Player Buzz Events vs. State Change Events
@@ -100,6 +104,10 @@ When a player presses their buzzer, the state machine emits **two sequential eve
 2. `StateChanged(LOCKED, player_id)` — triggers the generic `locked` cues
 
 This means a player buzzing in fires their colour/sound immediately (`player_1_buzz` → blue flash + buzz sound), and separately activates the locked-state cue. The `locked` key in `lighting.states` and `obs.states` covers the general lockout visual; `player_N_buzz` covers the player-specific announcement. Both fire every time a player buzzes in.
+
+The `/feedback/player` OSC message is emitted by the state machine as part of the `PlayerBuzzed` event — at the same time as step 1 above, before `StateChanged(LOCKED)`.
+
+The **DMX Client** and **Audio Engine** subscribe to both `PlayerBuzzed` (for `player_N_buzz` cues) and `StateChanged` (for all other state cues). The **OBS Client** subscribes to `StateChanged` only — there are no `player_N_buzz` entries in `obs.states` and OBS does not react to `PlayerBuzzed` events.
 
 ### Timed Lockout Feedback
 
@@ -219,8 +227,10 @@ service:
   touchosc_port: 9000
 
 buzzers:
-  # buzz_timeout_seconds may be overridden per-scene (scalar-replace rule).
-  # When null, buzz_timeout_hold_seconds and return_to_after_buzz_timeout are ignored.
+  # buzz_timeout_seconds lives here (buzzer input behaviour) rather than under state_machine
+  # (which holds hold durations and return targets). It may be overridden per-scene
+  # (scalar-replace rule). When null, state_machine.buzz_timeout_hold_seconds and
+  # state_machine.return_to_after_buzz_timeout are present but ignored.
   buzz_timeout_seconds: 10.0
   players:
     - id: 1
@@ -366,7 +376,8 @@ gameshow/
 │   ├── test_osc_server.py
 │   ├── test_dmx_client.py
 │   ├── test_audio.py
-│   └── test_obs_client.py
+│   ├── test_obs_client.py
+│   └── test_keyboard.py        # tests key→player mapping logic; pynput hook itself is not unit-tested
 └── requirements.txt
 ```
 
