@@ -43,3 +43,6 @@ class SceneChanged:
 class ControlCommand:
     command: str
     args: tuple = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "args", tuple(self.args))

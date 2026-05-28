@@ -1,3 +1,5 @@
+import pytest
+
 from gameshow.events import GameState, BuzzerPressed, PlayerBuzzed, StateChanged, SceneChanged, ControlCommand
 
 def test_game_state_enum_has_all_states():
@@ -9,11 +11,8 @@ def test_game_state_enum_has_all_states():
 
 def test_buzzer_pressed_is_frozen():
     e = BuzzerPressed(player_id=1)
-    try:
+    with pytest.raises(AttributeError):
         e.player_id = 2  # type: ignore
-        assert False, "should be frozen"
-    except Exception:
-        pass
 
 def test_state_changed_carries_optional_player():
     e = StateChanged(new_state=GameState.LOCKED, player_id=2)
