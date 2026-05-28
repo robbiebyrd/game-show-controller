@@ -13,7 +13,8 @@ _FX_CHANNEL = 1
 class AudioEngine:
     def __init__(self, bus: EventBus, config: Callable[[], AppConfig]) -> None:
         self._config = config
-        pygame.mixer.init()
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
         self._bg = pygame.mixer.Channel(_BG_CHANNEL)
         self._fx = pygame.mixer.Channel(_FX_CHANNEL)
         svc = config().service
@@ -35,9 +36,9 @@ class AudioEngine:
         self._feedback("/feedback/audio/effect/track", path)
 
     def _play_background(self, path: str) -> None:
+        self._bg.stop()
         sound = pygame.mixer.Sound(path)
         cfg = self._config().audio
-        self._bg.stop()
         self._bg.set_volume(cfg.default_background_volume)
         self._bg.play(sound, loops=-1)
         self._feedback("/feedback/audio/background/state", "playing")
