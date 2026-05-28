@@ -1,0 +1,118 @@
+service:
+  osc_server_host: "0.0.0.0"
+  osc_server_port: 21601
+  dmx_osc_host: "localhost"
+  dmx_osc_port: 21600
+  obs_host: "localhost"
+  obs_port: 4455
+  obs_password: ""
+  touchosc_host: "192.168.1.100"
+  touchosc_port: 9000
+
+buzzers:
+  buzz_timeout_seconds: 10.0
+  players:
+    - id: 1
+      name: "Player 1"
+      key: "1"
+      enabled: true
+    - id: 2
+      name: "Player 2"
+      key: "2"
+      enabled: true
+    - id: 3
+      name: "Player 3"
+      key: "3"
+      enabled: false
+    - id: 4
+      name: "Player 4"
+      key: "4"
+      enabled: false
+
+state_machine:
+  return_to_after_correct: idle
+  return_to_after_incorrect: idle
+  return_to_after_buzz_timeout: idle
+  return_to_after_round_start: idle
+  correct_hold_seconds: 2.0
+  incorrect_hold_seconds: 2.0
+  buzz_timeout_hold_seconds: 3.0
+  round_start_hold_seconds: 2.0
+
+lighting:
+  states:
+    idle:          "/palette/Idle/activate"
+    player_1_buzz: "/palette/Buzz_P1/start"
+    player_2_buzz: "/palette/Buzz_P2/start"
+    player_3_buzz: "/palette/Buzz_P3/start"
+    player_4_buzz: "/palette/Buzz_P4/start"
+    locked:        "/palette/Locked/activate"
+    correct:       "/palette/Correct/start"
+    incorrect:     "/palette/Incorrect/start"
+    allow_next:    "/palette/AllowNext/activate"
+    buzz_timeout:  "/palette/BuzzTimeout/start"
+    timed_lockout: "/palette/TimedLockout/activate"
+    round_start:   "/palette/RoundStart/activate"
+    game_over:     "/palette/GameOver/activate"
+
+audio:
+  default_background_volume: 0.7
+  default_effect_volume: 1.0
+  states:
+    player_1_buzz:
+      effect: "sounds/buzz_p1.mp3"
+    player_2_buzz:
+      effect: "sounds/buzz_p2.mp3"
+    correct:
+      effect: "sounds/correct.mp3"
+    incorrect:
+      effect: "sounds/incorrect.mp3"
+    buzz_timeout:
+      effect: "sounds/bong.mp3"
+    round_start:
+      background: "music/round_theme.mp3"
+    game_over:
+      background: "music/game_over.mp3"
+
+obs:
+  states:
+    idle:          "Idle"
+    locked:        "Buzz_Locked"
+    correct:       "Correct"
+    incorrect:     "Incorrect"
+    allow_next:    "Allow_Next"
+    buzz_timeout:  "Buzz_Timeout"
+    timed_lockout: "Timed_Lockout"
+    round_start:   "Round_Start"
+    game_over:     "Game_Over"
+
+show:
+  scenes:
+    - name: "Intro"
+      on_enter:
+        audio_background: "music/intro_theme.mp3"
+        obs_scene: "Intro_Screen"
+        lighting: "/palette/Intro/activate"
+      buzzers:
+        all_enabled: false
+    - name: "Face Off"
+      on_enter:
+        obs_scene: "FaceOff_Ready"
+        lighting: "/palette/FaceOff/activate"
+      buzzers:
+        buzz_timeout_seconds: null
+      lighting:
+        states:
+          locked: "/palette/FaceOff_Buzz/start"
+      obs:
+        states:
+          locked: "FaceOff_Buzz"
+          correct: "FaceOff_Correct"
+    - name: "Round 1"
+      on_enter:
+        audio_background: "music/round1_theme.mp3"
+        obs_scene: "Round1_Board"
+      state_machine:
+        return_to_after_incorrect: allow_next
+      buzzers:
+        buzz_timeout_seconds: 8.0
