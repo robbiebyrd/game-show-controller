@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 import logging
-from typing import Callable, Optional
+from typing import Callable
 import simpleobsws
 from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
@@ -31,6 +31,7 @@ class OBSClient:
         if not scene_name:
             return
         try:
+            log.info("OUT OBS SetCurrentProgramScene %s", scene_name)
             req = simpleobsws.Request("SetCurrentProgramScene", {"sceneName": scene_name})
             await self._ws.call(req)
         except Exception as exc:
@@ -56,20 +57,30 @@ class OBSClient:
                 delay = min(delay * 2, 30.0)
 
     async def _on_obs_event(self, event: dict) -> None:
+        log.info("IN  OBS event %s", event.get('eventType'))
         if event.get('eventType') == "CurrentProgramSceneChanged":
             scene_name = event.get('eventData', {}).get("sceneName", "")
-            log.debug("OBS scene changed: %s", scene_name)
             if self._feedback_client:
+                log.info("OUT OSC /feedback/obs/scene %s", [scene_name])
                 self._feedback_client.send_message("/feedback/obs/scene", [scene_name])
 
     async def _on_control_command(self, event: ControlCommand) -> None:
         if event.command == "obs_scene_set" and event.args and self._connected:
             scene_name = str(event.args[0])
             try:
+                log.info("OUT OBS SetCurrentProgramScene %s", scene_name)
                 req = simpleobsws.Request("SetCurrentProgramScene", {"sceneName": scene_name})
                 await self._ws.call(req)
             except Exception as exc:
                 log.warning("OBS scene set failed: %s", exc)
+        elif event.command == "obs_request" and event.args and self._connected:
+            request_type = str(event.args[0])
+            data = event.args[1] if len(event.args) > 1 else None
+            try:
+                log.info("OUT OBS %s %s", request_type, data)
+                await self._ws.call(simpleobsws.Request(request_type, data))
+            except Exception as exc:
+                log.warning("OBS request %s failed: %s", request_type, exc)
 
     async def stop(self) -> None:
         if self._connected:

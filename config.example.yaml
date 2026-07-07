@@ -117,184 +117,191 @@ show:
       buzzers:
         buzz_timeout_seconds: 8.0
 
+# Elgato Stream Deck MK.2 (15 keys, 3x5). Keys are 0-indexed, left-to-right,
+# top-to-bottom (key 0 = top-left, key 10 = bottom-left). On any sub-page,
+# key 10 is automatically a "return to previous page" button. Buttons without
+# an explicit `key` are auto-placed left-to-right into the remaining slots.
+#
+# Button types: reset_buzzer, buzz, state (clear|round_start|game_over|correct|
+# incorrect|allow_next|timed_lockout), countdown (action: display|toggle|pause|
+# resume|reset|cancel), scene_advance, scene_previous, scene_goto, scene_current,
+# state_display, lighting, sound, stop_sounds, obs_scene, obs_request, page.
 control_surface:
   enabled: true
-  brightness: 100
-  label_align: center      # top | center | bottom  (per-button `label_align:` overrides)
-  label_wrap: true         # word-wrap long labels   (per-button `label_wrap:` overrides)
-  # font_path: "fonts/CalSans-Regular.ttf"
-  fa_path: "node_modules/@fortawesome/fontawesome-pro"  # webfonts/ + metadata/ fetched via `mise run install`
-  fa_type: pro             # default icon family: pro|brands|duotone|sharp|sharp-duotone
-  fa_weight: solid         # default icon weight: solid|regular|light|thin
+  brightness: 60
+  # serial: "AL1234"                          # optional: pick a deck by serial
+  # font_path: "assets/Roboto-Regular.ttf"    # optional TTF for labels
+  # Font Awesome Pro icons (fetched via `mise run install`; see docs/control_surface.md):
+  # fa_path: "node_modules/@fortawesome/fontawesome-pro"  # dir with webfonts/ + metadata/
+  # fa_type: pro                               # pro|brands|duotone|sharp|sharp-duotone
+  # fa_weight: solid                           # solid|regular|light|thin
   root:
     buttons:
+      # Row 0 — buzzers + reset
       button_0:
         type: reset_buzzer
         label: "Reset"
+        key: 0
         color: "#552222"
       button_1:
         type: buzz
         label: "P1"
         player_id: 1
-        label_align: "center"
-        label_wrap: false
-        label_marquee: false
-        font_size: 28
+        key: 1
+        # Light the key green and swap the label while it's held down; it
+        # reverts to the values above the instant the key is released.
+        pressed:
+          color: "#00AA00"
+          label: "IN!"
+          text_color: "#000000"
       button_2:
         type: buzz
         label: "P2"
         player_id: 2
-        label_align: "center"
-        label_wrap: true
-        font_size: 28
+        key: 2
       button_3:
         type: buzz
         label: "P3"
         player_id: 3
-        label_align: "center"
-        label_wrap: true
-        font_size: 28
+        key: 3
       button_4:
         type: buzz
         label: "P4"
         player_id: 4
-        label_align: "center"
-        label_wrap: true
-        font_size: 28
+        key: 4
+      # Row 1 — adjudication + live readouts
       button_5:
         type: state
-        fa_icon: "check"        # Font Awesome icon by name
+        label: "Correct"
         state: correct
-        color: "#009900"
-        fa_size: 40
-        fa_color: "#FFFFFF"
-        pressed:                # <- applied only while held
-          color: "#AA00AA"      # green while pressed
-          fa_color: "#000000"
+        key: 5
+        color: "#224422"
       button_6:
         type: state
-        fa_icon: "xmark"
+        label: "Wrong"
         state: incorrect
-        color: "#FF0000"
-        fa_size: 44
-        fa_color: "#FFFFFF"
+        key: 6
+        color: "#442222"
       button_7:
         type: state
-        label: "Allow Next"
+        label: "Next"
         state: allow_next
-        text_wrap: true
-        font_size: 20
-        color: "#FFFF00"
-        text_color: "#000000"
+        key: 7
       button_8:
         type: countdown
         action: display
         label: "Timer"
+        key: 8
       button_9:
         type: state_display
         label: "State"
+        key: 9
+      # Row 2 — scene path + folders (key 10 free on the root page)
       button_10:
         type: scene_previous
-        fa_icon: "caret-large-left"
-        font_size: 56
+        label: "◀ Prev"
+        key: 10
       button_11:
         type: scene_current
         label: "Scene"
+        key: 11
       button_12:
         type: scene_advance
-        fa_icon: "caret-large-right"
-        font_size: 56
+        label: "Next ▶"
+        key: 12
       button_13:
         type: page
-        fa_icon: "album-collection"
-        label: "Sounds"
+        label: "Audio"
+        key: 13
         color: "#333355"
         page:
           buttons:
-            button_0:
+            applause:
               type: sound
               label: "Applause"
               path: "music/Game Achievement Sound 1.mp3"
-            button_1:
+            buzzer:
               type: sound
               label: "Buzzer"
               path: "music/Game Error 2.mp3"
-            button_2:
+            reveal:
               type: sound
               label: "Reveal"
               path: "music/Game Reveal Sound 2.mp3"
-            button_3:
+            stop_all:
               type: stop_sounds
               label: "Stop All"
               color: "#552222"
       button_14:
         type: page
         label: "More"
+        key: 14
         color: "#333355"
         page:
           buttons:
-            button_0:
+            lights:
               type: lighting
               label: "Lights"
               osc: "/live/Control_Panel/cue/Game/activate"
-            button_1:
+            lockout:
               type: state
               label: "Lockout 5s"
               state: timed_lockout
               duration: 5.0
-            button_2:
+            round_start:
               type: state
               label: "Round Start"
               state: round_start
-            button_3:
+            game_over:
               type: state
               label: "Game Over"
               state: game_over
               color: "#552222"
-            button_4:
+            face_off:
               type: scene_goto
               label: "Face Off"
               target: "Face Off"
-            button_5:
+            timer_folder:
               type: page
               label: "Timer"
               page:
                 buttons:
-                  button_0:
+                  timer_display:
                     type: countdown
                     action: display
                     label: "Timer"
-                  button_1:
+                  timer_pause:
                     type: countdown
                     action: pause
                     label: "Pause"
-                  button_2:
+                  timer_resume:
                     type: countdown
                     action: resume
                     label: "Resume"
-                  button_3:
+                  timer_reset:
                     type: countdown
                     action: reset
                     label: "Reset"
-                  button_4:
+                  timer_cancel:
                     type: countdown
                     action: cancel
                     label: "Cancel"
-            button_6:
+            obs_folder:
               type: page
               label: "OBS"
               page:
                 buttons:
-                  button_0:
+                  obs_intro:
                     type: obs_scene
                     label: "Intro"
                     scene: "Intro_Screen"
-                  button_1:
+                  obs_board:
                     type: obs_scene
                     label: "Board"
                     scene: "Round1_Board"
-                  button_2:
+                  obs_mute:
                     type: obs_request
                     label: "Mute Mic"
                     request_type: "SetInputMute"
                     request_data: { inputName: "Mic", inputMuted: true }
+

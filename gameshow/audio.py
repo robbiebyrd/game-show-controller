@@ -36,7 +36,7 @@ class AudioEngine:
     def _play_effect(self, path: str) -> None:
         sound = pygame.mixer.Sound(path)
         self._fx.play(sound)
-        log.debug("Audio effect: %s", path)
+        log.info("OUT AUDIO effect play %s", path)
         self._feedback("/feedback/audio/effect/state", "playing")
         self._feedback("/feedback/audio/effect/track", path)
 
@@ -44,7 +44,7 @@ class AudioEngine:
         self._bg.stop()
         sound = pygame.mixer.Sound(path)
         self._bg.play(sound, loops=-1)
-        log.debug("Audio background: %s", path)
+        log.info("OUT AUDIO background play %s", path)
         self._feedback("/feedback/audio/background/state", "playing")
         self._feedback("/feedback/audio/background/track", path)
 
@@ -66,19 +66,19 @@ class AudioEngine:
     async def _on_control_command(self, event: ControlCommand) -> None:
         if event.command == "audio_bg_stop":
             self._bg.stop()
-            log.debug("Audio background stopped")
+            log.info("OUT AUDIO background stop")
             self._feedback("/feedback/audio/background/state", "stopped")
         elif event.command == "audio_bg_pause":
             self._bg.pause()
-            log.debug("Audio background paused")
+            log.info("OUT AUDIO background pause")
             self._feedback("/feedback/audio/background/state", "paused")
         elif event.command == "audio_bg_resume":
             self._bg.unpause()
-            log.debug("Audio background resumed")
+            log.info("OUT AUDIO background resume")
             self._feedback("/feedback/audio/background/state", "playing")
         elif event.command == "audio_fx_stop":
             self._fx.stop()
-            log.debug("Audio effect stopped")
+            log.info("OUT AUDIO effect stop")
             self._feedback("/feedback/audio/effect/state", "stopped")
         elif event.command == "audio_background_play" and event.args:
             self._play_background(str(event.args[0]))

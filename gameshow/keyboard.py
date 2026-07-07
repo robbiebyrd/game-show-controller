@@ -28,7 +28,7 @@ class KeyboardListener:
         key_map = self._build_key_map()
         player_id = key_map.get(key_char)
         if player_id is not None:
-            log.debug("Key %r → player %d buzzer", key_char, player_id)
+            log.info("IN  KEY %r → player %d buzzer", key_char, player_id)
             await self._bus.publish(BuzzerPressed(player_id=player_id))
 
     def _handle_key(self, key: keyboard.Key | keyboard.KeyCode) -> None:

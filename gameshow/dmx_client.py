@@ -19,7 +19,7 @@ class DMXClient:
         bus.subscribe(ControlCommand, self._on_control_command)
 
     def _send(self, address: str) -> None:
-        log.debug("DMX cue: %s", address)
+        log.info("OUT DMX %s", address)
         self._client.send_message(address, [])
 
     async def _on_state_changed(self, event: StateChanged) -> None:

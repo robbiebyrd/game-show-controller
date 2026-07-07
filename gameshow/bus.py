@@ -12,6 +12,12 @@ class EventBus:
         self._subscribers.setdefault(event_type, []).append(handler)
 
     async def publish(self, event: Any) -> None:
+        # Central log of every event on the bus. CountdownTick fires ~4x/sec,
+        # so it stays at DEBUG to avoid flooding the default INFO log.
+        if type(event).__name__ == "CountdownTick":
+            log.debug("event %s", event)
+        else:
+            log.info("event %s", event)
         for handler in self._subscribers.get(type(event), []):
             try:
                 await handler(event)
