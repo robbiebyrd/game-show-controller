@@ -47,6 +47,7 @@ class OSCServer:
 
     def _feedback(self, address: str, *args: Any) -> None:
         if self._feedback_client:
+            log.info("OUT OSC %s %s", address, list(args))
             self._feedback_client.send_message(address, list(args))
 
     def _setup_feedback_subscriptions(self) -> None:
@@ -68,7 +69,7 @@ class OSCServer:
         self._feedback("/feedback/scene", f"{event.index}: {event.name}")
 
     async def _dispatch(self, address: str, args: list[Any]) -> None:
-        log.debug("OSC in: %s %s", address, args)
+        log.info("IN  OSC %s %s", address, args)
         if address in _SIMPLE_COMMANDS:
             await self._bus.publish(ControlCommand(command=_SIMPLE_COMMANDS[address]))
             return

@@ -1,0 +1,9 @@
+{
+  "name": "game-show-controller-fonts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fetches Font Awesome Pro desktop OTFs + metadata for the Stream Deck control surface. Not a JS app — npm is used only as the delivery channel for the licensed font assets.",
+  "dependencies": {
+    "@fortawesome/fontawesome-pro": "^7.0.0"
+  }
+}

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import signal
 from gameshow.config import load_config
 from gameshow.bus import EventBus
@@ -10,10 +11,11 @@ from gameshow.osc_server import OSCServer
 from gameshow.dmx_client import DMXClient
 from gameshow.audio import AudioEngine
 from gameshow.obs_client import OBSClient
+from gameshow.control_surface import ControlSurface
 from gameshow.events import ControlCommand, SceneChanged
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 log = logging.getLogger(__name__)
@@ -26,7 +28,8 @@ async def main() -> None:
     bus = EventBus()
 
     scene_manager = SceneManager(bus, base_raw, base_config)
-    config_fn = lambda: scene_manager.current_config
+    def config_fn():
+        return scene_manager.current_config
 
     state_machine = StateMachine(bus, config_fn)
     keyboard = KeyboardListener(bus, config_fn)
@@ -34,6 +37,7 @@ async def main() -> None:
     DMXClient(bus, config_fn)
     AudioEngine(bus, config_fn)
     obs_client = OBSClient(bus, config_fn)
+    control_surface = ControlSurface(bus, config_fn)
 
     # Wire on_enter actions when a scene activates.
     # DMXClient handles "dmx_cue"; OBSClient handles "obs_scene_set".
@@ -73,6 +77,7 @@ async def main() -> None:
     await keyboard.start()
     await osc_server.start()
     await obs_client.start()
+    await control_surface.start()
 
     log.info("Game show control service running. Press Ctrl+C to stop.")
 
@@ -88,6 +93,7 @@ async def main() -> None:
     await state_machine.stop()
     await osc_server.stop()
     await obs_client.stop()
+    await control_surface.stop()
 
 
 if __name__ == "__main__":

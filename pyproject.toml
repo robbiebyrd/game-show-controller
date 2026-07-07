@@ -1,0 +1,29 @@
+[project]
+name = "game-show-controller"
+version = "0.1.0"
+description = "Game show control service wiring keyboard, OSC, DMX, audio, and OBS together over an event bus."
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+    "pynput>=1.7",
+    "python-osc>=1.8",
+    "pygame>=2.5",
+    "simpleobsws>=1.4",
+    "streamdeck>=0.9.8",
+    "pillow>=10.0",
+    "watchdog (>=6.0.0,<7.0.0)",
+]
+
+[tool.poetry]
+packages = [{ include = "gameshow" }]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
+pytest-asyncio = ">=0.23"
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+
+[build-system]
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"

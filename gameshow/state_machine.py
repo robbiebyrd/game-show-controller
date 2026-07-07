@@ -5,10 +5,60 @@ from typing import Optional, Callable
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
 from gameshow.events import (
-    BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand, GameState
+    BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand, GameState,
+    CountdownTick, CountdownEnded
 )
 
 log = logging.getLogger(__name__)
+
+COUNTDOWN_TICK_SECONDS = 0.25
+
+
+class Countdown:
+    """A pausable, resettable countdown that emits ticks until it expires.
+
+    ``on_tick(remaining, total, paused)`` fires every tick; ``on_expire()``
+    fires once when the remaining time naturally reaches zero. A hard
+    ``stop()`` cancels the task without firing either callback.
+    """
+
+    def __init__(self, total: float, tick: float,
+                 on_tick: Callable[[float, float, bool], "asyncio.Future"],
+                 on_expire: Callable[[], "asyncio.Future"]) -> None:
+        self.total = total
+        self.remaining = total
+        self._tick = tick
+        self.paused = False
+        self._on_tick = on_tick
+        self._on_expire = on_expire
+        self._task: Optional[asyncio.Task] = None
+
+    def start(self) -> None:
+        self._task = asyncio.create_task(self._run())
+
+    def pause(self) -> None:
+        self.paused = True
+
+    def resume(self) -> None:
+        self.paused = False
+
+    def reset(self) -> None:
+        self.remaining = self.total
+
+    def stop(self) -> None:
+        if self._task and not self._task.done():
+            self._task.cancel()
+
+    async def _run(self) -> None:
+        await self._on_tick(self.remaining, self.total, self.paused)
+        while self.remaining > 0:
+            step = self._tick if self.paused else min(self._tick, self.remaining)
+            await asyncio.sleep(step)
+            if not self.paused:
+                self.remaining = max(0.0, self.remaining - step)
+            await self._on_tick(self.remaining, self.total, self.paused)
+        await self._on_expire()
+
 
 _TRANSIENT_HOLD_MAP = {
     GameState.CORRECT: lambda sm: sm._config().state_machine.correct_hold_seconds,
@@ -33,6 +83,7 @@ class StateMachine:
         self.locked_player_id: Optional[int] = None
         self._banned: set[int] = set()
         self._timer: Optional[asyncio.Task] = None
+        self._countdown: Optional[Countdown] = None
 
     async def start(self) -> None:
         self._bus.subscribe(BuzzerPressed, self._on_buzzer_pressed)
@@ -40,11 +91,28 @@ class StateMachine:
 
     async def stop(self) -> None:
         self._cancel_timer()
+        await self._stop_countdown(None)
 
     def _cancel_timer(self) -> None:
         if self._timer and not self._timer.done():
             self._timer.cancel()
         self._timer = None
+
+    async def _stop_countdown(self, reason: Optional[str]) -> None:
+        """Stop the active countdown, optionally announcing why it ended."""
+        if self._countdown is not None:
+            self._countdown.stop()
+            self._countdown = None
+            if reason is not None:
+                await self._bus.publish(CountdownEnded(reason=reason))
+
+    async def _emit_tick(self, remaining: float, total: float, paused: bool) -> None:
+        await self._bus.publish(CountdownTick(remaining=remaining, total=total, paused=paused))
+
+    async def _on_countdown_expire(self) -> None:
+        self._countdown = None
+        await self._bus.publish(CountdownEnded(reason="expired"))
+        await self._enter_state(GameState.BUZZ_TIMEOUT, self.locked_player_id)
 
     def _enabled_player_ids(self) -> set[int]:
         return {p.id for p in self._config().buzzers.players if p.enabled}
@@ -57,6 +125,7 @@ class StateMachine:
 
     async def _enter_state(self, new_state: GameState, player_id: Optional[int] = None) -> None:
         self._cancel_timer()
+        await self._stop_countdown("superseded")
         log.info("State → %s%s", new_state.name, f" (player {player_id})" if player_id is not None else "")
         self.state = new_state
 
@@ -101,26 +170,22 @@ class StateMachine:
 
     async def _lock_player(self, player_id: int) -> None:
         self._cancel_timer()
+        await self._stop_countdown(None)
         log.info("Player %d (%s) buzzed in", player_id, self._player_name(player_id))
         self.locked_player_id = player_id
         await self._bus.publish(PlayerBuzzed(
             player_id=player_id, player_name=self._player_name(player_id)
         ))
 
-        cfg = self._config()
-        if cfg.buzzers.buzz_timeout_seconds is not None:
-            timeout = cfg.buzzers.buzz_timeout_seconds
-            self._cancel_timer()
-            self.state = GameState.LOCKED
-            await self._bus.publish(StateChanged(new_state=GameState.LOCKED, player_id=player_id))
-            self._timer = asyncio.create_task(self._buzz_timeout(timeout))
-        else:
-            self.state = GameState.LOCKED
-            await self._bus.publish(StateChanged(new_state=GameState.LOCKED, player_id=player_id))
+        self.state = GameState.LOCKED
+        await self._bus.publish(StateChanged(new_state=GameState.LOCKED, player_id=player_id))
 
-    async def _buzz_timeout(self, delay: float) -> None:
-        await asyncio.sleep(delay)
-        await self._enter_state(GameState.BUZZ_TIMEOUT, self.locked_player_id)
+        timeout = self._config().buzzers.buzz_timeout_seconds
+        if timeout is not None:
+            self._countdown = Countdown(
+                timeout, COUNTDOWN_TICK_SECONDS, self._emit_tick, self._on_countdown_expire
+            )
+            self._countdown.start()
 
     async def _on_control_command(self, event: ControlCommand) -> None:
         cmd = event.command
@@ -147,6 +212,22 @@ class StateMachine:
             self.state = GameState.TIMED_LOCKOUT
             await self._bus.publish(StateChanged(new_state=GameState.TIMED_LOCKOUT, duration=duration))
             self._timer = asyncio.create_task(self._auto_return(duration, "idle"))
+            return
+
+        if cmd == "countdown_pause":
+            if self._countdown:
+                self._countdown.pause()
+            return
+        if cmd == "countdown_resume":
+            if self._countdown:
+                self._countdown.resume()
+            return
+        if cmd == "countdown_reset":
+            if self._countdown:
+                self._countdown.reset()
+            return
+        if cmd == "countdown_cancel":
+            await self._stop_countdown("cancelled")
             return
 
         if self.state == GameState.GAME_OVER:

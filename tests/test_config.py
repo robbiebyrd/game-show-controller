@@ -114,3 +114,214 @@ def test_scene_lighting_states_deep_merge():
     cfg = parse_config(merged_raw)
     assert cfg.lighting.states["locked"] == "/palette/CustomLocked/start"
     assert cfg.lighting.states["idle"] == "/palette/Idle/activate"
+
+
+def test_no_control_surface_section_is_none():
+    cfg = parse_config(load(MINIMAL_YAML))
+    assert cfg.control_surface is None
+
+
+CONTROL_SURFACE_YAML = MINIMAL_YAML + textwrap.dedent("""\
+    control_surface:
+      enabled: true
+      brightness: 50
+      font_path: "assets/Roboto.ttf"
+      root:
+        buttons:
+          button_0:
+            type: state
+            label: "Clear"
+            state: clear
+          button_1:
+            type: buzz
+            label: "P1"
+            player_id: 1
+          button_5:
+            type: page
+            label: "Audio"
+            page:
+              buttons:
+                button_0:
+                  type: sound
+                  label: "Applause"
+                  path: "music/applause.mp3"
+                button_1:
+                  type: stop_sounds
+                  label: "Stop"
+""")
+
+
+def test_control_surface_parsed_with_nested_page():
+    cfg = parse_config(load(CONTROL_SURFACE_YAML))
+    cs = cfg.control_surface
+    assert cs is not None
+    assert cs.enabled is True
+    assert cs.brightness == 50
+    assert cs.font_path == "assets/Roboto.ttf"
+
+    # Buttons are a name -> spec mapping; the key (slot) is derived from a
+    # ``button_<N>`` name. Iteration preserves declaration order.
+    buttons = cs.root.buttons
+    assert len(buttons) == 3
+    assert buttons[0].name == "button_0"
+    assert buttons[0].type == "state"
+    assert buttons[0].state == "clear"
+    assert buttons[0].key == 0          # derived from name
+    assert buttons[1].name == "button_1"
+    assert buttons[1].key == 1          # derived from name
+
+    folder = buttons[2]
+    assert folder.type == "page"
+    assert folder.key == 5              # derived from "button_5"
+    assert folder.page is not None
+    assert [b.type for b in folder.page.buttons] == ["sound", "stop_sounds"]
+    assert [b.key for b in folder.page.buttons] == [0, 1]
+    assert folder.page.buttons[0].path == "music/applause.mp3"
+
+
+def test_control_surface_label_options_default():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {}
+    cs = parse_config(raw).control_surface
+    assert cs.label_align == "bottom"
+    assert cs.label_wrap is False
+    assert cs.label_marquee is True
+    assert cs.font_size == 16
+    assert cs.font_path is None
+    assert cs.text_color == "white"
+    assert cs.color == "black"
+    assert cs.fa_size is None
+    assert cs.fa_color is None
+
+
+def test_control_surface_label_options_global():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {"label_align": "center", "label_wrap": True,
+                              "label_marquee": False, "font_size": 20,
+                              "font_path": "assets/Roboto.ttf",
+                              "text_color": "#FFCC00", "color": "#101010",
+                              "fa_size": 36, "fa_color": "#00AAFF",
+                              "root": {"buttons": {}}}
+    cs = parse_config(raw).control_surface
+    assert cs.label_align == "center"
+    assert cs.label_wrap is True
+    assert cs.label_marquee is False
+    assert cs.font_size == 20
+    assert cs.font_path == "assets/Roboto.ttf"
+    assert cs.text_color == "#FFCC00"
+    assert cs.color == "#101010"
+    assert cs.fa_size == 36
+    assert cs.fa_color == "#00AAFF"
+
+
+def test_button_label_and_font_overrides():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {"root": {"buttons": {
+        "button_0": {"type": "state", "state": "clear", "label_align": "top",
+                     "label_wrap": True, "label_marquee": False,
+                     "font_path": "assets/Bold.ttf", "font_size": 24,
+                     "text_color": "#00FF00"},
+    }}}
+    button = parse_config(raw).control_surface.root.buttons[0]
+    assert button.label_align == "top"
+    assert button.label_wrap is True
+    assert button.label_marquee is False
+    assert button.font_path == "assets/Bold.ttf"
+    assert button.font_size == 24
+    assert button.text_color == "#00FF00"
+
+
+def test_button_pressed_overrides_parsed():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {"root": {"buttons": {
+        "button_0": {"type": "buzz", "player_id": 1, "label": "P1",
+                     "color": "#111111",
+                     "pressed": {"color": "#00FF00", "label": "IN",
+                                 "text_color": "#000000", "fa_icon": "bell"}},
+    }}}
+    button = parse_config(raw).control_surface.root.buttons[0]
+    assert button.color == "#111111"          # unchanged base value
+    assert button.pressed is not None
+    assert button.pressed.color == "#00FF00"
+    assert button.pressed.label == "IN"
+    assert button.pressed.text_color == "#000000"
+    assert button.pressed.fa_icon == "bell"
+    # Unset pressed fields stay None so they don't clobber base values.
+    assert button.pressed.font_size is None
+
+
+def test_button_without_pressed_section_is_none():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {"root": {"buttons": {
+        "button_0": {"type": "state", "state": "clear"},
+    }}}
+    assert parse_config(raw).control_surface.root.buttons[0].pressed is None
+
+
+def test_font_awesome_config_parsed():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {
+        "fa_path": "icons/fa/pro", "fa_type": "duotone", "fa_weight": "light",
+        "root": {"buttons": {
+            "button_0": {"type": "state", "state": "clear", "fa_icon": "circle-user",
+                         "fa_type": "sharp", "fa_weight": "thin",
+                         "fa_size": 40, "fa_color": "#00FF00"},
+        }},
+    }
+    cs = parse_config(raw).control_surface
+    assert cs.fa_path == "icons/fa/pro"
+    assert cs.fa_type == "duotone"
+    assert cs.fa_weight == "light"
+    button = cs.root.buttons[0]
+    assert button.fa_icon == "circle-user"
+    assert button.fa_type == "sharp"
+    assert button.fa_weight == "thin"
+    assert button.fa_size == 40
+    assert button.fa_color == "#00FF00"
+
+
+def test_font_awesome_defaults():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {}
+    cs = parse_config(raw).control_surface
+    assert cs.fa_path is None
+    assert cs.fa_type == "pro"
+    assert cs.fa_weight == "solid"
+
+
+def test_button_key_derived_from_name():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {"root": {"buttons": {
+        "button_7": {"type": "buzz", "player_id": 1},
+    }}}
+    cfg = parse_config(raw)
+    assert cfg.control_surface.root.buttons[0].key == 7
+
+
+def test_descriptive_name_yields_no_key():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {"root": {"buttons": {
+        "applause": {"type": "sound", "path": "a.mp3"},
+    }}}
+    cfg = parse_config(raw)
+    # Non-"button_N" names carry no derived key → auto-placed at render time.
+    assert cfg.control_surface.root.buttons[0].key is None
+
+
+def test_explicit_key_overrides_name():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {"root": {"buttons": {
+        "button_3": {"type": "buzz", "player_id": 1, "key": 8},
+    }}}
+    cfg = parse_config(raw)
+    assert cfg.control_surface.root.buttons[0].key == 8
+
+
+def test_control_surface_defaults_when_minimal():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {}
+    cfg = parse_config(raw)
+    assert cfg.control_surface is not None
+    assert cfg.control_surface.enabled is True
+    assert cfg.control_surface.brightness == 60
+    assert cfg.control_surface.root.buttons == []

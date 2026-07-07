@@ -8,6 +8,10 @@ stories/archive
 # Video assets (large binaries)
 videos/
 
+# Node / Font Awesome Pro assets (fetched via npm, licensed — never committed)
+node_modules/
+icons/
+
 # Python
 .venv/
 __pycache__/
@@ -21,3 +25,5 @@ build/
 
 # Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+.fa_token
+.env

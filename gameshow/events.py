@@ -40,6 +40,18 @@ class SceneChanged:
 
 
 @dataclass(frozen=True)
+class CountdownTick:
+    remaining: float
+    total: float
+    paused: bool = False
+
+
+@dataclass(frozen=True)
+class CountdownEnded:
+    reason: str  # "expired" | "cancelled" | "superseded"
+
+
+@dataclass(frozen=True)
 class ControlCommand:
     command: str
     args: tuple = field(default_factory=tuple)

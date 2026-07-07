@@ -1,10 +1,11 @@
 import asyncio
 import pytest
-from unittest.mock import AsyncMock
 from gameshow.bus import EventBus
 from gameshow.events import (
-    BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand, GameState
+    BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand, GameState,
+    CountdownTick, CountdownEnded
 )
+from gameshow import state_machine as sm_module
 from gameshow.state_machine import StateMachine
 from gameshow.config import (
     AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig,
@@ -290,6 +291,164 @@ async def test_timed_lockout_auto_returns_to_idle():
     assert sm.state == GameState.TIMED_LOCKOUT
     await asyncio.sleep(0.15)
     assert sm.state == GameState.IDLE
+
+    await sm.stop()
+
+
+@pytest.fixture
+def fast_tick(monkeypatch):
+    monkeypatch.setattr(sm_module, "COUNTDOWN_TICK_SECONDS", 0.02)
+
+
+@pytest.mark.asyncio
+async def test_countdown_emits_ticks_during_buzz_in(fast_tick):
+    bus = EventBus()
+    config = make_config(buzz_timeout_seconds=0.2)
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    ticks = []
+    async def capture(e): ticks.append(e)
+    bus.subscribe(CountdownTick, capture)
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await asyncio.sleep(0.1)
+
+    assert len(ticks) >= 2
+    assert ticks[0].total == 0.2
+    assert ticks[0].remaining >= ticks[-1].remaining
+    assert all(t.paused is False for t in ticks)
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_countdown_expiry_ends_and_reaches_buzz_timeout(fast_tick):
+    bus = EventBus()
+    config = make_config(buzz_timeout_seconds=0.1, buzz_timeout_hold=0.05,
+                         players=[PlayerConfig(id=1, name="P1", key="1", enabled=True)])
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    ended = []
+    async def capture(e): ended.append(e)
+    bus.subscribe(CountdownEnded, capture)
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await asyncio.sleep(0.35)
+
+    assert any(e.reason == "expired" for e in ended)
+    # single-player config → all exhausted after timeout → IDLE
+    assert sm.state == GameState.IDLE
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_countdown_pause_freezes_and_prevents_expiry(fast_tick):
+    bus = EventBus()
+    config = make_config(buzz_timeout_seconds=0.15)
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await asyncio.sleep(0.04)
+    await bus.publish(ControlCommand(command="countdown_pause"))
+
+    ticks = []
+    async def capture(e): ticks.append(e)
+    bus.subscribe(CountdownTick, capture)
+
+    await asyncio.sleep(0.25)
+    # Still locked (no expiry) and paused ticks report frozen remaining
+    assert sm.state == GameState.LOCKED
+    assert ticks, "paused countdown should still emit ticks"
+    assert all(t.paused for t in ticks)
+    assert ticks[0].remaining == ticks[-1].remaining
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_countdown_resume_continues_to_expiry(fast_tick):
+    bus = EventBus()
+    config = make_config(buzz_timeout_seconds=0.1, buzz_timeout_hold=0.05,
+                         players=[PlayerConfig(id=1, name="P1", key="1", enabled=True)])
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="countdown_pause"))
+    await asyncio.sleep(0.15)
+    assert sm.state == GameState.LOCKED  # paused, no expiry
+    await bus.publish(ControlCommand(command="countdown_resume"))
+    await asyncio.sleep(0.3)
+    assert sm.state == GameState.IDLE  # resumed → expired → exhausted
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_countdown_reset_restores_remaining(fast_tick):
+    bus = EventBus()
+    config = make_config(buzz_timeout_seconds=0.3)
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await asyncio.sleep(0.12)
+
+    ticks = []
+    async def capture(e): ticks.append(e)
+    bus.subscribe(CountdownTick, capture)
+
+    await bus.publish(ControlCommand(command="countdown_reset"))
+    await asyncio.sleep(0.05)
+    assert ticks
+    assert ticks[0].remaining > 0.25  # bumped back near total
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_countdown_cancel_stops_timer_but_stays_locked(fast_tick):
+    bus = EventBus()
+    config = make_config(buzz_timeout_seconds=0.1, buzz_timeout_hold=0.05)
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    ended = []
+    async def capture(e): ended.append(e)
+    bus.subscribe(CountdownEnded, capture)
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="countdown_cancel"))
+    await asyncio.sleep(0.25)
+
+    assert any(e.reason == "cancelled" for e in ended)
+    assert sm.state == GameState.LOCKED  # no auto-timeout after cancel
+    assert sm.locked_player_id == 1
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_host_transition_supersedes_countdown(fast_tick):
+    bus = EventBus()
+    config = make_config(buzz_timeout_seconds=0.3, correct_hold=0.05)
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    ended = []
+    async def capture(e): ended.append(e)
+    bus.subscribe(CountdownEnded, capture)
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await asyncio.sleep(0.04)
+    await bus.publish(ControlCommand(command="correct"))
+
+    assert any(e.reason == "superseded" for e in ended)
+    assert sm.state == GameState.CORRECT
 
     await sm.stop()
 
