@@ -1,10 +1,13 @@
 from __future__ import annotations
+import logging
 from typing import Callable
 import pygame
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
 from pythonosc.udp_client import SimpleUDPClient
 from gameshow.events import StateChanged, PlayerBuzzed, ControlCommand
+
+log = logging.getLogger(__name__)
 
 _BG_CHANNEL = 0
 _FX_CHANNEL = 1
@@ -17,6 +20,9 @@ class AudioEngine:
             pygame.mixer.init()
         self._bg = pygame.mixer.Channel(_BG_CHANNEL)
         self._fx = pygame.mixer.Channel(_FX_CHANNEL)
+        cfg = config().audio
+        self._bg.set_volume(cfg.default_background_volume)
+        self._fx.set_volume(cfg.default_effect_volume)
         svc = config().service
         self._feedback_client = SimpleUDPClient(svc.touchosc_host, svc.touchosc_port) if svc.touchosc_host else None
         bus.subscribe(StateChanged, self._on_state_changed)
@@ -29,18 +35,16 @@ class AudioEngine:
 
     def _play_effect(self, path: str) -> None:
         sound = pygame.mixer.Sound(path)
-        cfg = self._config().audio
-        self._fx.set_volume(cfg.default_effect_volume)
         self._fx.play(sound)
+        log.debug("Audio effect: %s", path)
         self._feedback("/feedback/audio/effect/state", "playing")
         self._feedback("/feedback/audio/effect/track", path)
 
     def _play_background(self, path: str) -> None:
         self._bg.stop()
         sound = pygame.mixer.Sound(path)
-        cfg = self._config().audio
-        self._bg.set_volume(cfg.default_background_volume)
         self._bg.play(sound, loops=-1)
+        log.debug("Audio background: %s", path)
         self._feedback("/feedback/audio/background/state", "playing")
         self._feedback("/feedback/audio/background/track", path)
 
@@ -62,9 +66,19 @@ class AudioEngine:
     async def _on_control_command(self, event: ControlCommand) -> None:
         if event.command == "audio_bg_stop":
             self._bg.stop()
+            log.debug("Audio background stopped")
             self._feedback("/feedback/audio/background/state", "stopped")
+        elif event.command == "audio_bg_pause":
+            self._bg.pause()
+            log.debug("Audio background paused")
+            self._feedback("/feedback/audio/background/state", "paused")
+        elif event.command == "audio_bg_resume":
+            self._bg.unpause()
+            log.debug("Audio background resumed")
+            self._feedback("/feedback/audio/background/state", "playing")
         elif event.command == "audio_fx_stop":
             self._fx.stop()
+            log.debug("Audio effect stopped")
             self._feedback("/feedback/audio/effect/state", "stopped")
         elif event.command == "audio_background_play" and event.args:
             self._play_background(str(event.args[0]))

@@ -38,11 +38,10 @@ class BuzzerConfig:
 class StateMachineConfig:
     return_to_after_correct: str = "idle"
     return_to_after_incorrect: str = "idle"
-    return_to_after_buzz_timeout: str = "idle"
     return_to_after_round_start: str = "idle"
     correct_hold_seconds: float = 2.0
     incorrect_hold_seconds: float = 2.0
-    buzz_timeout_hold_seconds: float = 3.0
+    buzz_timeout_hold_seconds: float = 0.5
     round_start_hold_seconds: float = 2.0
 
 
@@ -130,7 +129,7 @@ def apply_scene_override(base_raw: dict, scene_raw: dict) -> dict:
 
 def _validate_return_targets(sm: StateMachineConfig) -> None:
     for attr in ("return_to_after_correct", "return_to_after_incorrect",
-                 "return_to_after_buzz_timeout", "return_to_after_round_start"):
+                 "return_to_after_round_start"):
         value = getattr(sm, attr)
         if value not in VALID_RETURN_TARGETS:
             raise ValueError(

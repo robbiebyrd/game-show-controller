@@ -31,11 +31,10 @@ MINIMAL_YAML = textwrap.dedent("""\
     state_machine:
       return_to_after_correct: idle
       return_to_after_incorrect: idle
-      return_to_after_buzz_timeout: idle
       return_to_after_round_start: idle
       correct_hold_seconds: 2.0
       incorrect_hold_seconds: 2.0
-      buzz_timeout_hold_seconds: 3.0
+      buzz_timeout_hold_seconds: 0.5
       round_start_hold_seconds: 2.0
     lighting:
       states:

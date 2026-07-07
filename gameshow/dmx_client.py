@@ -1,9 +1,12 @@
 from __future__ import annotations
+import logging
 from typing import Callable
 from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
 from gameshow.events import StateChanged, PlayerBuzzed, ControlCommand
+
+log = logging.getLogger(__name__)
 
 
 class DMXClient:
@@ -16,6 +19,7 @@ class DMXClient:
         bus.subscribe(ControlCommand, self._on_control_command)
 
     def _send(self, address: str) -> None:
+        log.debug("DMX cue: %s", address)
         self._client.send_message(address, [])
 
     async def _on_state_changed(self, event: StateChanged) -> None:

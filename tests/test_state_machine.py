@@ -20,7 +20,6 @@ def make_config(
     round_start_hold=0.05,
     return_correct="idle",
     return_incorrect="idle",
-    return_buzz_timeout="idle",
     return_round_start="idle",
     players=None,
 ):
@@ -39,7 +38,6 @@ def make_config(
             round_start_hold_seconds=round_start_hold,
             return_to_after_correct=return_correct,
             return_to_after_incorrect=return_incorrect,
-            return_to_after_buzz_timeout=return_buzz_timeout,
             return_to_after_round_start=return_round_start,
         ),
         lighting=LightingConfig(),
@@ -199,7 +197,49 @@ async def test_buzz_timeout_fires_after_delay():
 
     await bus.publish(BuzzerPressed(player_id=1))
     await asyncio.sleep(0.2)
-    assert sm.state == GameState.IDLE  # timeout fired and auto-returned
+    # P1 timed out and is banned; P2 still available → ALLOW_NEXT
+    assert sm.state == GameState.ALLOW_NEXT
+    assert 1 in sm._banned
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_buzz_timeout_allows_other_players_to_buzz():
+    bus = EventBus()
+    config = make_config(buzz_timeout_seconds=0.05, buzz_timeout_hold=0.05)
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await asyncio.sleep(0.2)
+    assert sm.state == GameState.ALLOW_NEXT
+
+    # Timed-out player is banned
+    await bus.publish(BuzzerPressed(player_id=1))
+    assert sm.state == GameState.ALLOW_NEXT
+
+    # Other player can buzz in
+    await bus.publish(BuzzerPressed(player_id=2))
+    assert sm.state == GameState.LOCKED
+    assert sm.locked_player_id == 2
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_buzz_timeout_all_players_exhausted_returns_to_idle():
+    bus = EventBus()
+    players = [PlayerConfig(id=1, name="P1", key="1", enabled=True)]
+    config = make_config(buzz_timeout_seconds=0.05, buzz_timeout_hold=0.05, players=players)
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await asyncio.sleep(0.2)
+    # Only one player, they timed out → all exhausted → IDLE with ban cleared
+    assert sm.state == GameState.IDLE
+    assert len(sm._banned) == 0
 
     await sm.stop()
 

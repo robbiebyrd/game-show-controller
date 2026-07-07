@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import logging
 from typing import Optional, Callable
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
@@ -7,17 +8,17 @@ from gameshow.events import (
     BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand, GameState
 )
 
+log = logging.getLogger(__name__)
+
 _TRANSIENT_HOLD_MAP = {
     GameState.CORRECT: lambda sm: sm._config().state_machine.correct_hold_seconds,
     GameState.INCORRECT: lambda sm: sm._config().state_machine.incorrect_hold_seconds,
-    GameState.BUZZ_TIMEOUT: lambda sm: sm._config().state_machine.buzz_timeout_hold_seconds,
     GameState.ROUND_START: lambda sm: sm._config().state_machine.round_start_hold_seconds,
 }
 
 _RETURN_TO_MAP = {
     GameState.CORRECT: lambda sm: sm._config().state_machine.return_to_after_correct,
     GameState.INCORRECT: lambda sm: sm._config().state_machine.return_to_after_incorrect,
-    GameState.BUZZ_TIMEOUT: lambda sm: sm._config().state_machine.return_to_after_buzz_timeout,
     GameState.ROUND_START: lambda sm: sm._config().state_machine.return_to_after_round_start,
 }
 
@@ -56,14 +57,30 @@ class StateMachine:
 
     async def _enter_state(self, new_state: GameState, player_id: Optional[int] = None) -> None:
         self._cancel_timer()
+        log.info("State → %s%s", new_state.name, f" (player {player_id})" if player_id is not None else "")
         self.state = new_state
 
         await self._bus.publish(StateChanged(new_state=new_state, player_id=player_id))
 
-        if new_state in _TRANSIENT_HOLD_MAP:
+        if new_state == GameState.BUZZ_TIMEOUT:
+            hold = self._config().state_machine.buzz_timeout_hold_seconds
+            self._timer = asyncio.create_task(self._buzz_timeout_return(player_id, hold))
+        elif new_state in _TRANSIENT_HOLD_MAP:
             hold = _TRANSIENT_HOLD_MAP[new_state](self)
             return_to = _RETURN_TO_MAP[new_state](self)
             self._timer = asyncio.create_task(self._auto_return(hold, return_to))
+
+    async def _buzz_timeout_return(self, player_id: Optional[int], hold: float) -> None:
+        await asyncio.sleep(hold)
+        if player_id is not None:
+            self._banned.add(player_id)
+        self.locked_player_id = None
+        enabled = self._enabled_player_ids()
+        if self._banned >= enabled:
+            self._banned.clear()
+            await self._enter_state(GameState.IDLE)
+        else:
+            await self._enter_state(GameState.ALLOW_NEXT)
 
     async def _auto_return(self, delay: float, return_to: str) -> None:
         await asyncio.sleep(delay)
@@ -74,14 +91,17 @@ class StateMachine:
         pid = event.player_id
         enabled = self._enabled_player_ids()
         if pid not in enabled:
+            log.debug("Buzzer press from disabled player %d ignored", pid)
             return
 
-        if self.state == GameState.IDLE:
+        if self.state == GameState.IDLE and pid not in self._banned:
             await self._lock_player(pid)
-        elif self.state == GameState.ALLOW_NEXT and pid not in self._banned:
+        elif self.state in (GameState.ALLOW_NEXT, GameState.INCORRECT) and pid not in self._banned:
             await self._lock_player(pid)
 
     async def _lock_player(self, player_id: int) -> None:
+        self._cancel_timer()
+        log.info("Player %d (%s) buzzed in", player_id, self._player_name(player_id))
         self.locked_player_id = player_id
         await self._bus.publish(PlayerBuzzed(
             player_id=player_id, player_name=self._player_name(player_id)
@@ -130,14 +150,17 @@ class StateMachine:
             return
 
         if self.state == GameState.GAME_OVER:
-            return  # game_over only exits via clear
+            log.debug("Command %r ignored in GAME_OVER", cmd)
+            return
 
         if self.state != GameState.LOCKED:
-            return  # correct, incorrect, allow_next ignored outside LOCKED
+            log.debug("Command %r ignored outside LOCKED (state=%s)", cmd, self.state.name)
+            return
 
         if cmd == "correct":
             await self._enter_state(GameState.CORRECT, self.locked_player_id)
         elif cmd == "incorrect":
+            self._banned.add(self.locked_player_id)
             await self._enter_state(GameState.INCORRECT, self.locked_player_id)
         elif cmd == "allow_next":
             self._banned.add(self.locked_player_id)

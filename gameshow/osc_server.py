@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import logging
 from typing import Any, Callable
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.osc_server import AsyncIOOSCUDPServer
@@ -7,6 +8,8 @@ from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
 from gameshow.events import ControlCommand, SceneChanged, StateChanged, PlayerBuzzed, GameState
+
+log = logging.getLogger(__name__)
 
 _SIMPLE_COMMANDS = {
     "/buzzer/clear": "clear",
@@ -19,6 +22,8 @@ _SIMPLE_COMMANDS = {
     "/show/previous": "scene_previous",
     "/show/current": "scene_current",
     "/audio/background/stop": "audio_bg_stop",
+    "/audio/background/pause": "audio_bg_pause",
+    "/audio/background/resume": "audio_bg_resume",
     "/audio/effect/stop": "audio_fx_stop",
 }
 
@@ -38,6 +43,7 @@ class OSCServer:
         svc = self._config().service
         if svc.touchosc_host:
             self._feedback_client = SimpleUDPClient(svc.touchosc_host, svc.touchosc_port)
+            log.info("OSC feedback client → %s:%d", svc.touchosc_host, svc.touchosc_port)
 
     def _feedback(self, address: str, *args: Any) -> None:
         if self._feedback_client:
@@ -52,14 +58,17 @@ class OSCServer:
         self._feedback("/feedback/state", event.new_state.name.lower())
         if event.new_state == GameState.TIMED_LOCKOUT and event.duration is not None:
             self._feedback("/feedback/timed_lockout/duration", event.duration)
+        if event.new_state in (GameState.CORRECT, GameState.INCORRECT, GameState.IDLE):
+            self._feedback("/feedback/player", "None")
 
     async def _on_player_buzzed(self, event: PlayerBuzzed) -> None:
-        self._feedback("/feedback/player", event.player_id, event.player_name)
+        self._feedback("/feedback/player", f"{event.player_id}: {event.player_name}")
 
     async def _on_scene_changed(self, event: SceneChanged) -> None:
-        self._feedback("/feedback/scene", event.index, event.name)
+        self._feedback("/feedback/scene", f"{event.index}: {event.name}")
 
     async def _dispatch(self, address: str, args: list[Any]) -> None:
+        log.debug("OSC in: %s %s", address, args)
         if address in _SIMPLE_COMMANDS:
             await self._bus.publish(ControlCommand(command=_SIMPLE_COMMANDS[address]))
             return
@@ -104,7 +113,9 @@ class OSCServer:
             (cfg.osc_server_host, cfg.osc_server_port), dispatcher, self._loop
         )
         self._transport, self._protocol = await server.create_serve_endpoint()
+        log.info("OSC server listening on %s:%d", cfg.osc_server_host, cfg.osc_server_port)
 
     async def stop(self) -> None:
         if self._transport:
             self._transport.close()
+            log.info("OSC server stopped")

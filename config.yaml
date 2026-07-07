@@ -6,11 +6,11 @@ service:
   obs_host: "localhost"
   obs_port: 4455
   obs_password: ""
-  touchosc_host: "192.168.1.100"
+  touchosc_host: "127.0.0.1"
   touchosc_port: 9000
 
 buzzers:
-  buzz_timeout_seconds: 10.0
+  buzz_timeout_seconds: 5
   players:
     - id: 1
       name: "Player 1"
@@ -32,47 +32,47 @@ buzzers:
 state_machine:
   return_to_after_correct: idle
   return_to_after_incorrect: idle
-  return_to_after_buzz_timeout: idle
   return_to_after_round_start: idle
   correct_hold_seconds: 2.0
   incorrect_hold_seconds: 2.0
-  buzz_timeout_hold_seconds: 3.0
+  buzz_timeout_hold_seconds: 0.5
   round_start_hold_seconds: 2.0
 
 lighting:
   states:
-    idle:          "/palette/Idle/activate"
-    player_1_buzz: "/palette/Buzz_P1/start"
-    player_2_buzz: "/palette/Buzz_P2/start"
-    player_3_buzz: "/palette/Buzz_P3/start"
-    player_4_buzz: "/palette/Buzz_P4/start"
-    locked:        "/palette/Locked/activate"
-    correct:       "/palette/Correct/start"
-    incorrect:     "/palette/Incorrect/start"
-    allow_next:    "/palette/AllowNext/activate"
-    buzz_timeout:  "/palette/BuzzTimeout/start"
-    timed_lockout: "/palette/TimedLockout/activate"
-    round_start:   "/palette/RoundStart/activate"
-    game_over:     "/palette/GameOver/activate"
+    idle:          "/live/Control_Panel/cue/Game/activate"
+    player_1_buzz: "/live/Control_Panel/cue/Buzz_Left/activate"
+    player_2_buzz: "/live/Control_Panel/cue/Buzz_Right/activate"
+    player_3_buzz: "/live/Control_Panel/cue/BLACK/activate"
+    player_4_buzz: "/live/Control_Panel/cue/BLACK/activate"
+    locked:        "/"
+    correct:       "/live/Control_Panel/cue/Correct/activate"
+    incorrect:     "/live/Control_Panel/cue/Incorrect/activate"
+    allow_next:    "/live/*/cue/*/deactivate 0"
+    buzz_timeout:  "/live/Control_Panel/cue/Buzzer_Timeout/activate"
+    timed_lockout: "/live/Control_Panel/cue/Buzzer_Timeout/activate"
+    round_start:   "/live/Control_Panel/cue/Yellow_Buzz/activate"
+    game_over:     "/live/Control_Panel/cue/Game/activate"
+    clear:         "/live/*/cue/*/deactivate 0"
 
 audio:
   default_background_volume: 0.7
   default_effect_volume: 1.0
   states:
     player_1_buzz:
-      effect: "sounds/buzz_p1.mp3"
+      effect: "music/Game Inventory Slot 2.mp3"
     player_2_buzz:
-      effect: "sounds/buzz_p2.mp3"
+      effect: "music/Game Checkpoint Sound 1.mp3"
     correct:
-      effect: "sounds/correct.mp3"
+      effect: "music/Game Achievement Sound 1.mp3"
     incorrect:
-      effect: "sounds/incorrect.mp3"
+      effect: "music/Game Error 2.mp3"
     buzz_timeout:
-      effect: "sounds/bong.mp3"
+      effect: "music/Game Block Destruction 2.mp3"
     round_start:
-      background: "music/round_theme.mp3"
+      background: "music/Game Score Count 2.mp3"
     game_over:
-      background: "music/game_over.mp3"
+      background: "music/Mission Failed Sound Effect 2.mp3"
 
 obs:
   states:
@@ -90,7 +90,7 @@ show:
   scenes:
     - name: "Intro"
       on_enter:
-        audio_background: "music/intro_theme.mp3"
+        audio_background: "music/Game Reveal Sound 2.mp3"
         obs_scene: "Intro_Screen"
         lighting: "/palette/Intro/activate"
       buzzers:
@@ -110,7 +110,7 @@ show:
           correct: "FaceOff_Correct"
     - name: "Round 1"
       on_enter:
-        audio_background: "music/round1_theme.mp3"
+        audio_background: "music/Game Level Up 1.mp3"
         obs_scene: "Round1_Board"
       state_machine:
         return_to_after_incorrect: allow_next

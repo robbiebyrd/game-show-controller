@@ -1,8 +1,9 @@
 import asyncio
 import pytest
+from unittest.mock import MagicMock
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig, StateMachineConfig, LightingConfig, AudioConfig, OBSConfig
-from gameshow.events import ControlCommand, SceneChanged
+from gameshow.events import ControlCommand, SceneChanged, StateChanged, GameState
 from gameshow.osc_server import OSCServer
 
 
@@ -67,3 +68,33 @@ async def test_show_goto_string_publishes_scene_goto_name():
     await server._dispatch("/show/goto", ["Round 1"])
     assert received[0].command == "scene_goto_name"
     assert received[0].args == ("Round 1",)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", [GameState.CORRECT, GameState.INCORRECT, GameState.IDLE])
+async def test_feedback_player_cleared_on_result_states(state):
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    mock_client = MagicMock()
+    server._feedback_client = mock_client
+
+    await server._on_state_changed(StateChanged(new_state=state))
+
+    calls = [call for call in mock_client.send_message.call_args_list
+             if call.args[0] == "/feedback/player"]
+    assert calls, f"Expected /feedback/player message for state {state.name}"
+    assert calls[0].args[1] == ["None"]
+
+
+@pytest.mark.asyncio
+async def test_feedback_player_not_cleared_on_locked_state():
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    mock_client = MagicMock()
+    server._feedback_client = mock_client
+
+    await server._on_state_changed(StateChanged(new_state=GameState.LOCKED))
+
+    calls = [call for call in mock_client.send_message.call_args_list
+             if call.args[0] == "/feedback/player"]
+    assert not calls
