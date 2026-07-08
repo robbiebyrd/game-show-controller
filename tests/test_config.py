@@ -244,6 +244,36 @@ def test_unknown_map_behavior_raises():
         parse_config(raw)
 
 
+def test_counters_config_parses():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["counters"] = {"strikes": {"max": 3, "initial": 0}}
+    cfg = parse_config(raw)
+    assert cfg.state_machine.counters["strikes"].max == 3
+    assert cfg.state_machine.counters["strikes"].initial == 0
+
+
+def test_when_counter_at_guard_parses():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["counters"] = {"strikes": {"max": 3}}
+    raw["state_machine"]["states"]["locked"]["transitions"]["incorrect"] = {
+        "to": "incorrect", "do": [{"increment": "strikes"}],
+        "when_counter_at": {"counter": "strikes", "value": 3, "to": "buzz_timeout"},
+    }
+    guard = parse_config(raw).state_machine.states["locked"].transitions["incorrect"].when_counter_at
+    assert guard.counter == "strikes"
+    assert guard.value == 3
+    assert guard.to == "buzz_timeout"
+
+
+def test_when_counter_at_unknown_counter_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["transitions"]["incorrect"] = {
+        "to": "incorrect", "when_counter_at": {"counter": "ghost", "value": 3, "to": "idle"},
+    }
+    with pytest.raises(ValueError, match="ghost"):
+        parse_config(raw)
+
+
 def _with_library(raw: dict) -> dict:
     """Move the inline state_machine into a 'standard' library entry + reference it."""
     raw = dict(raw)

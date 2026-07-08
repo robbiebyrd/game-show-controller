@@ -10,8 +10,10 @@ from gameshow.state_machine import StateMachine
 from gameshow.config import (
     AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig,
     StateMachineConfig, StateConfig, TransitionConfig,
-    LightingConfig, AudioConfig, OBSConfig, ScoringConfig, Behavior
+    LightingConfig, AudioConfig, OBSConfig, ScoringConfig, Behavior,
+    CounterConfig, CounterGuard,
 )
+from gameshow.events import CounterChanged
 
 
 def _enable_scoring(cfg, default_award=100, default_deduct=50):
@@ -661,6 +663,67 @@ async def test_award_override_timeout_commits_default(monkeypatch):
     assert any(isinstance(e, AwardChanged) and e.value == 100 for e in events)
     await bus.publish(ControlCommand(command="correct"))
     assert sm.scores[1] == 100
+    await sm.stop()
+
+
+def _enable_counter(cfg, name="strikes", max_value=3):
+    """Add a counter incremented on 'incorrect' that redirects at the threshold."""
+    sm = cfg.state_machine
+    sm.counters[name] = CounterConfig(max=max_value)
+    tr = sm.states["locked"].transitions["incorrect"]
+    tr.do.append(Behavior("increment", name))
+    tr.when_counter_at = CounterGuard(counter=name, value=max_value, to="allow_next")
+    return cfg
+
+
+@pytest.mark.asyncio
+async def test_increment_counter_emits_event():
+    bus = EventBus()
+    cfg = _enable_counter(make_config())
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    events = []
+    async def capture(e): events.append(e)
+    bus.subscribe(CounterChanged, capture)
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="incorrect"))
+    assert sm.counters["strikes"] == 1
+    assert any(isinstance(e, CounterChanged) and e.name == "strikes" and e.value == 1
+               for e in events)
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_when_counter_at_redirects_and_resets():
+    bus = EventBus()
+    cfg = _enable_counter(make_config(), max_value=2)
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    # First wrong answer: below threshold → stays incorrect.
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="incorrect"))
+    assert sm.state == "incorrect"
+    assert sm.counters["strikes"] == 1
+    # Second wrong: reaches 2 → redirect to allow_next and counter resets.
+    await bus.publish(BuzzerPressed(player_id=2))
+    await bus.publish(ControlCommand(command="incorrect"))
+    assert sm.state == "allow_next"
+    assert sm.counters["strikes"] == 0
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_counters_reset_on_scene_change():
+    holder = {"cfg": _enable_counter(make_config())}
+    bus = EventBus()
+    sm = StateMachine(bus, lambda: holder["cfg"])
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="incorrect"))
+    assert sm.counters["strikes"] == 1
+    holder["cfg"] = _enable_counter(make_config())
+    await bus.publish(SceneChanged(index=2, name="Round 2"))
+    assert sm.counters.get("strikes", 0) == 0
     await sm.stop()
 
 

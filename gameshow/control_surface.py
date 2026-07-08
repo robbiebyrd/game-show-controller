@@ -12,7 +12,7 @@ from gameshow.bus import EventBus
 from gameshow.config import AppConfig, ButtonConfig, PageConfig
 from gameshow.events import (
     ControlCommand, BuzzerPressed, StateChanged, SceneChanged,
-    CountdownTick, CountdownEnded, ScoreChanged,
+    CountdownTick, CountdownEnded, ScoreChanged, CounterChanged,
 )
 
 log = logging.getLogger(__name__)
@@ -92,6 +92,7 @@ class ControlSurface:
         self._last_scene = "—"
         self._last_state = "idle"
         self._scores: dict[int, float] = {}
+        self._counters: dict[str, int] = {}
 
     # ------------------------------------------------------------------ setup
     def _default_factory(self) -> list:
@@ -249,6 +250,7 @@ class ControlSurface:
         self._bus.subscribe(SceneChanged, self._on_scene)
         self._bus.subscribe(StateChanged, self._on_state)
         self._bus.subscribe(ScoreChanged, self._on_score)
+        self._bus.subscribe(CounterChanged, self._on_counter)
 
         await self._render()
         self._marquee_task = asyncio.create_task(self._marquee_loop())
@@ -582,6 +584,8 @@ class ControlSurface:
             return self._last_state
         if button.type == "score_display":
             return self._score_text()
+        if button.type == "counter_display":
+            return str(self._counters.get(button.counter, 0))
         return None
 
     def _score_text(self) -> str:
@@ -626,3 +630,7 @@ class ControlSurface:
     async def _on_score(self, event: ScoreChanged) -> None:
         self._scores[event.player_id] = event.score
         self._refresh_type("score_display")
+
+    async def _on_counter(self, event: CounterChanged) -> None:
+        self._counters[event.name] = event.value
+        self._refresh_type("counter_display")

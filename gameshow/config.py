@@ -37,6 +37,7 @@ class BuzzerConfig:
 STATE_BEHAVIORS = {
     "ban_current", "clear_bans", "clear_player", "countdown",
     "award", "deduct", "reset_scores", "await_award",
+    "increment", "reset",
 }
 
 
@@ -66,10 +67,25 @@ class ScoringConfig:
 
 
 @dataclass
+class CounterConfig:
+    max: Optional[int] = None
+    initial: int = 0
+
+
+@dataclass
+class CounterGuard:
+    """On a transition: once ``counter`` reaches ``value``, reset it and go to ``to``."""
+    counter: str
+    value: int
+    to: str
+
+
+@dataclass
 class TransitionConfig:
     to: str                                   # target state name
     do: list = field(default_factory=list)    # side-effect behaviors (str | {name: param})
     when_all_banned: Optional[str] = None      # redirect + clear bans if all players banned
+    when_counter_at: Optional[CounterGuard] = None  # redirect + reset when a counter hits a value
 
     def __post_init__(self) -> None:
         self.do = [_as_behavior(b) for b in self.do]
@@ -94,6 +110,7 @@ class StateMachineConfig:
     global_: dict[str, TransitionConfig] = field(default_factory=dict)  # triggers valid anywhere
     scoring: Optional[ScoringConfig] = None
     reset_scores_on_enter: bool = False  # clear scores when this machine becomes active
+    counters: dict[str, CounterConfig] = field(default_factory=dict)
 
 
 @dataclass
@@ -184,6 +201,7 @@ class ButtonConfig:
     target: Optional[object] = None      # scene_goto: name (str) or index (int)
     duration: Optional[float] = None     # timed_lockout / countdown
     value: Optional[float] = None        # set_award: point value for the current question
+    counter: Optional[str] = None        # counter_display: which counter to show
     action: Optional[str] = None         # countdown: display|toggle|pause|resume|reset|cancel
     request_type: Optional[str] = None   # obs_request
     request_data: Optional[dict] = None  # obs_request payload
@@ -267,10 +285,14 @@ def _parse_transition(raw: object) -> TransitionConfig:
     if isinstance(raw, str):
         return TransitionConfig(to=raw)
     if isinstance(raw, dict) and "to" in raw:
+        guard_raw = raw.get("when_counter_at")
+        guard = CounterGuard(counter=guard_raw["counter"], value=guard_raw["value"],
+                             to=guard_raw["to"]) if guard_raw else None
         return TransitionConfig(
             to=raw["to"],
             do=list(raw.get("do", [])),
             when_all_banned=raw.get("when_all_banned"),
+            when_counter_at=guard,
         )
     raise ValueError(f"invalid transition {raw!r}; expected a state name or a mapping with 'to'")
 
@@ -298,9 +320,16 @@ def _parse_state_machine(raw: dict) -> StateMachineConfig:
     scoring = ScoringConfig(**{k: v for k, v in scoring_raw.items()
                                if k in ScoringConfig.__dataclass_fields__}) if scoring_raw else None
 
+    counters = {
+        name: CounterConfig(**{k: v for k, v in (spec or {}).items()
+                               if k in CounterConfig.__dataclass_fields__})
+        for name, spec in (raw.get("counters") or {}).items()
+    }
+
     sm = StateMachineConfig(
         initial=raw["initial"], states=states, global_=global_,
         scoring=scoring, reset_scores_on_enter=raw.get("reset_scores_on_enter", False),
+        counters=counters,
     )
     _validate_state_machine(sm)
     return sm
@@ -340,6 +369,12 @@ def _validate_state_machine(sm: StateMachineConfig) -> None:
             raise ValueError(
                 f"{where}: when_all_banned target '{tr.when_all_banned}' is not a defined state"
             )
+        if tr.when_counter_at is not None:
+            guard = tr.when_counter_at
+            if guard.counter not in sm.counters:
+                raise ValueError(f"{where}: when_counter_at counter '{guard.counter}' is not defined")
+            if guard.to not in sm.states:
+                raise ValueError(f"{where}: when_counter_at target '{guard.to}' is not a defined state")
         for behavior in tr.do:
             if behavior.name not in STATE_BEHAVIORS:
                 raise ValueError(

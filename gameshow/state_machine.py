@@ -7,7 +7,7 @@ from gameshow.config import AppConfig
 from gameshow.config import TransitionConfig
 from gameshow.events import (
     BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
-    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged, AwardChanged
+    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged, AwardChanged, CounterChanged
 )
 
 # Countdown controls act on the live countdown rather than driving a transition.
@@ -86,6 +86,7 @@ class StateMachine:
         self.scores: dict[int, float] = {}       # per-player, persists across scenes
         self.pending_award: Optional[float] = None  # host override for the current question
         self._award_timer: Optional[asyncio.Task] = None
+        self.counters: dict[str, int] = {}       # named counters, reset per scene
 
     async def start(self) -> None:
         self._bus.subscribe(BuzzerPressed, self._on_buzzer_pressed)
@@ -106,6 +107,7 @@ class StateMachine:
         self._banned.clear()
         self.locked_player_id = None
         self.pending_award = None
+        self.counters.clear()
         sm = self._config().state_machine
         if sm.reset_scores_on_enter:
             await self._reset_scores()
@@ -177,7 +179,22 @@ class StateMachine:
                 await self._adjust_score(-self._amount(b, "default_deduct"))
             elif b.name == "reset_scores":
                 await self._reset_scores()
+            elif b.name == "increment":
+                await self._change_counter(b.param, self._counter(b.param) + 1)
+            elif b.name == "reset":
+                await self._change_counter(b.param, self._counter_initial(b.param))
             # "countdown"/"await_award" are entry behaviors; no meaning in a `do` list.
+
+    def _counter_initial(self, name: str) -> int:
+        cfg = self._config().state_machine.counters.get(name)
+        return cfg.initial if cfg is not None else 0
+
+    def _counter(self, name: str) -> int:
+        return self.counters.get(name, self._counter_initial(name))
+
+    async def _change_counter(self, name: str, value: int) -> None:
+        self.counters[name] = value
+        await self._bus.publish(CounterChanged(name=name, value=value))
 
     def _amount(self, behavior, default_attr: str) -> float:
         """Resolve a scoring amount: the behavior's own param, else the machine default."""
@@ -218,11 +235,15 @@ class StateMachine:
             await self._bus.publish(ScoreChanged(player_id=pid, score=0, delta=0))
 
     async def _resolve_target(self, tr: TransitionConfig) -> str:
-        """Run the transition's behaviors and apply the all-banned guard."""
+        """Run the transition's behaviors, then apply the all-banned / counter guards."""
         await self._run_do(tr.do)
         if tr.when_all_banned is not None and self._banned >= self._enabled_player_ids():
             self._banned.clear()
             return tr.when_all_banned
+        guard = tr.when_counter_at
+        if guard is not None and self._counter(guard.counter) >= guard.value:
+            await self._change_counter(guard.counter, self._counter_initial(guard.counter))
+            return guard.to
         return tr.to
 
     async def _fire(self, trigger: str, arg: object = None,

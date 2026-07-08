@@ -11,7 +11,7 @@ from gameshow.config import (
 )
 from gameshow.events import (
     ControlCommand, BuzzerPressed, StateChanged, SceneChanged,
-    CountdownTick, CountdownEnded, ScoreChanged,
+    CountdownTick, CountdownEnded, ScoreChanged, CounterChanged,
 )
 from gameshow.control_surface import ControlSurface, RETURN_KEY
 
@@ -194,6 +194,14 @@ async def test_score_display_reflects_score_changes():
     await cs._on_score(ScoreChanged(player_id=2, score=150, delta=150))
     text = cs._dynamic_value(button)
     assert "300" in text and "150" in text
+
+
+@pytest.mark.asyncio
+async def test_counter_display_reflects_counter_changes():
+    button = ButtonConfig(type="counter_display", counter="strikes", name="strikes")
+    bus, cs, deck = make_surface([button])
+    await cs._on_counter(CounterChanged(name="strikes", value=2))
+    assert cs._dynamic_value(button) == "2"
 
 
 @pytest.mark.asyncio

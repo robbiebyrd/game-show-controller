@@ -3,7 +3,9 @@ import pytest
 from unittest.mock import MagicMock
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig, StateMachineConfig, LightingConfig, AudioConfig, OBSConfig
-from gameshow.events import ControlCommand, SceneChanged, StateChanged, ScoreChanged, AwardChanged
+from gameshow.events import (
+    ControlCommand, SceneChanged, StateChanged, ScoreChanged, AwardChanged, CounterChanged
+)
 from gameshow.osc_server import OSCServer
 
 
@@ -98,6 +100,20 @@ async def test_feedback_score_changed():
     calls = [c for c in mock_client.send_message.call_args_list
              if c.args[0] == "/feedback/score/1"]
     assert calls and calls[0].args[1] == [300]
+
+
+@pytest.mark.asyncio
+async def test_feedback_counter_changed():
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    mock_client = MagicMock()
+    server._feedback_client = mock_client
+
+    await server._on_counter_changed(CounterChanged(name="strikes", value=2))
+
+    calls = [c for c in mock_client.send_message.call_args_list
+             if c.args[0] == "/feedback/counter/strikes"]
+    assert calls and calls[0].args[1] == [2]
 
 
 @pytest.mark.asyncio

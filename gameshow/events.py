@@ -39,6 +39,12 @@ class AwardChanged:
 
 
 @dataclass(frozen=True)
+class CounterChanged:
+    name: str
+    value: int
+
+
+@dataclass(frozen=True)
 class CountdownTick:
     remaining: float
     total: float

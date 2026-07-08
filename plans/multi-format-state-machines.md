@@ -92,7 +92,7 @@ scoring:
 - The `award` behavior grants `pending_award if set else default_award`, then clears `pending_award`.
 - If `award_override_timeout` is set, entering the "question live" state starts a timer; on expiry `pending_award` commits to `default_award` (for display). Emits an event so the value shows on the surface.
 
-**Phase C — Counters + guards.** Machine `counters`; `increment`/`reset` behaviors; generalized `guards` with `when_counter_at`; `CounterChanged` event.
+**Phase C — Counters + guards. ✅ DONE** (story 012). Machine `counters`; `increment`/`reset` behaviors; `when_counter_at` transition guard (redirect + reset at threshold); `CounterChanged` event; counters reset per scene; `counter_display` key + OSC feedback.
 
 **Phase D — Turn / control.** Machine `turn`; `next_turn`/`set_turn`; restrict triggers to current-turn player where configured; `TurnChanged` event.
 
