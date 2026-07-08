@@ -1,6 +1,16 @@
+---
+status: completed
+created: 2026-07-08
+validated_at: "2026-07-08T16:04:14.558Z"
+updated: "2026-07-08T16:04:49.331Z"
+approved_at: "2026-07-08T16:04:18.252Z"
+started_at: "2026-07-08T16:04:18.300Z"
+completed_at: "2026-07-08T16:04:21.530Z"
+archived_at: "2026-07-08T16:04:49.331Z"
+---
 # Plan: Stream Deck Control Surface
 
-**Created:** 2026-07-07 | **Status:** Draft | **Effort:** L | **Branch:** feat/stream-deck-control-surface
+**Created:** 2026-07-07 | **Status:** Complete | **Effort:** L | **Branch:** feat/stream-deck-control-surface
 
 ## Summary
 
@@ -340,17 +350,17 @@ await control_surface.stop()
 
 ## Acceptance Criteria
 
-- [ ] All existing tests still pass; new tests for Steps 1–5 pass.
-- [ ] StateMachine emits `CountdownTick` during buzz-in and supports pause/resume/reset/cancel; expiry still reaches `BUZZ_TIMEOUT`.
-- [ ] Each configured button type publishes the correct bus event; `stop_sounds` stops both channels.
-- [ ] Sub-pages always show a working return button at key 10; root has none.
-- [ ] Live keys (countdown, current scene, current state) update from bus events.
-- [ ] No physical device required for the test suite (FakeDeck / injected factory).
-- [ ] Missing deck at startup logs a warning and leaves the rest of the app running.
+- [x] All existing tests still pass; new tests for Steps 1–5 pass. (150 passed)
+- [x] StateMachine emits `CountdownTick` during buzz-in and supports pause/resume/reset/cancel; expiry still reaches `BUZZ_TIMEOUT`.
+- [x] Each configured button type publishes the correct bus event; `stop_sounds` stops both channels.
+- [x] Sub-pages always show a working return button at key 10; root has none.
+- [x] Live keys (countdown, current scene, current state) update from bus events.
+- [x] No physical device required for the test suite (FakeDeck / injected factory).
+- [x] Missing deck at startup logs a warning and leaves the rest of the app running.
 
 ## Checklist (non-TDD cleanup)
 
-- [ ] `poetry run flake8 gameshow/control_surface.py` clean; type hints on public methods.
-- [ ] `config.yaml` example documents every button type.
-- [ ] `docs/` notes `brew install hidapi` and the `control_surface` schema.
-- [ ] No bare `except:` (use `except Exception`); handlers log on failure.
+- [ ] `poetry run flake8 gameshow/control_surface.py` clean; type hints on public methods. (Type hints present; 45 `E501` line-length warnings remain — project-wide, no flake8 config sets `max-line-length`.)
+- [x] `config.yaml` example documents every button type.
+- [x] `docs/` notes `brew install hidapi` and the `control_surface` schema.
+- [x] No bare `except:` (use `except Exception`); handlers log on failure.
