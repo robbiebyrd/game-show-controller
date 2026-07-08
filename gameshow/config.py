@@ -5,9 +5,6 @@ import re
 import yaml
 
 
-VALID_RETURN_TARGETS = {"idle", "allow_next"}
-
-
 @dataclass
 class ServiceConfig:
     osc_server_host: str = "0.0.0.0"
@@ -35,15 +32,32 @@ class BuzzerConfig:
     buzz_timeout_seconds: Optional[float] = 10.0
 
 
+# Typed side-effect behaviors that config may attach to a state (as ``behaviors``)
+# or to a transition (as ``do``). The interpreter in state_machine.py implements them.
+STATE_BEHAVIORS = {"ban_current", "clear_bans", "clear_player", "countdown"}
+
+
+@dataclass
+class TransitionConfig:
+    to: str                                   # target state name
+    do: list[str] = field(default_factory=list)   # side-effect behaviors to run
+    when_all_banned: Optional[str] = None     # redirect + clear bans if all players banned
+
+
+@dataclass
+class StateConfig:
+    transitions: dict[str, TransitionConfig] = field(default_factory=dict)  # trigger -> transition
+    behaviors: list[str] = field(default_factory=list)   # entry side-effects
+    hold: Optional[float] = None              # auto-return delay (seconds)
+    hold_from_arg: Optional[float] = None     # default hold when the trigger carries no duration
+    then: Optional[TransitionConfig] = None   # where to go after ``hold``/``hold_from_arg``
+
+
 @dataclass
 class StateMachineConfig:
-    return_to_after_correct: str = "idle"
-    return_to_after_incorrect: str = "idle"
-    return_to_after_round_start: str = "idle"
-    correct_hold_seconds: float = 2.0
-    incorrect_hold_seconds: float = 2.0
-    buzz_timeout_hold_seconds: float = 0.5
-    round_start_hold_seconds: float = 2.0
+    initial: str
+    states: dict[str, StateConfig] = field(default_factory=dict)
+    global_: dict[str, TransitionConfig] = field(default_factory=dict)  # triggers valid anywhere
 
 
 @dataclass
@@ -211,14 +225,74 @@ def apply_scene_override(base_raw: dict, scene_raw: dict) -> dict:
     return deep_merge(base_raw, override)
 
 
-def _validate_return_targets(sm: StateMachineConfig) -> None:
-    for attr in ("return_to_after_correct", "return_to_after_incorrect",
-                 "return_to_after_round_start"):
-        value = getattr(sm, attr)
-        if value not in VALID_RETURN_TARGETS:
+def _parse_transition(raw: object) -> TransitionConfig:
+    """A transition is either a bare target string or a ``{to, do, when_all_banned}`` map."""
+    if isinstance(raw, str):
+        return TransitionConfig(to=raw)
+    if isinstance(raw, dict) and "to" in raw:
+        return TransitionConfig(
+            to=raw["to"],
+            do=list(raw.get("do", [])),
+            when_all_banned=raw.get("when_all_banned"),
+        )
+    raise ValueError(f"invalid transition {raw!r}; expected a state name or a mapping with 'to'")
+
+
+def _parse_state_machine(raw: dict) -> StateMachineConfig:
+    if "initial" not in raw:
+        raise ValueError("state_machine is missing required key 'initial'")
+    if "states" not in raw:
+        raise ValueError("state_machine is missing required key 'states'")
+
+    states: dict[str, StateConfig] = {}
+    for name, s in raw["states"].items():
+        s = s or {}
+        states[name] = StateConfig(
+            transitions={t: _parse_transition(v)
+                         for t, v in (s.get("transitions") or {}).items()},
+            behaviors=list(s.get("behaviors", [])),
+            hold=s.get("hold"),
+            hold_from_arg=s.get("hold_from_arg"),
+            then=_parse_transition(s["then"]) if "then" in s else None,
+        )
+    global_ = {t: _parse_transition(v) for t, v in (raw.get("global") or {}).items()}
+
+    sm = StateMachineConfig(initial=raw["initial"], states=states, global_=global_)
+    _validate_state_machine(sm)
+    return sm
+
+
+def _validate_state_machine(sm: StateMachineConfig) -> None:
+    if sm.initial not in sm.states:
+        raise ValueError(f"initial state '{sm.initial}' is not defined in states")
+
+    def check_transition(tr: TransitionConfig, where: str) -> None:
+        if tr.to not in sm.states:
+            raise ValueError(f"{where}: transition target '{tr.to}' is not a defined state")
+        if tr.when_all_banned is not None and tr.when_all_banned not in sm.states:
             raise ValueError(
-                f"{attr}='{value}' is not valid; must be one of {sorted(VALID_RETURN_TARGETS)}"
+                f"{where}: when_all_banned target '{tr.when_all_banned}' is not a defined state"
             )
+        for behavior in tr.do:
+            if behavior not in STATE_BEHAVIORS:
+                raise ValueError(
+                    f"{where}: unknown behavior '{behavior}'; "
+                    f"must be one of {sorted(STATE_BEHAVIORS)}"
+                )
+
+    for trigger, tr in sm.global_.items():
+        check_transition(tr, f"global.{trigger}")
+    for name, state in sm.states.items():
+        for behavior in state.behaviors:
+            if behavior not in STATE_BEHAVIORS:
+                raise ValueError(
+                    f"state '{name}': unknown behavior '{behavior}'; "
+                    f"must be one of {sorted(STATE_BEHAVIORS)}"
+                )
+        for trigger, tr in state.transitions.items():
+            check_transition(tr, f"state '{name}' trigger '{trigger}'")
+        if state.then is not None:
+            check_transition(state.then, f"state '{name}' then")
 
 
 _BUTTON_KEY_RE = re.compile(r"button_(\d+)$")
@@ -293,10 +367,9 @@ def parse_config(raw: dict) -> AppConfig:
         buzz_timeout_seconds=bz_raw.get("buzz_timeout_seconds", 10.0),
     )
 
-    sm_raw = raw.get("state_machine", {})
-    state_machine = StateMachineConfig(**{k: v for k, v in sm_raw.items()
-                                         if k in StateMachineConfig.__dataclass_fields__})
-    _validate_return_targets(state_machine)
+    if "state_machine" not in raw:
+        raise ValueError("config is missing required 'state_machine' section")
+    state_machine = _parse_state_machine(raw["state_machine"])
 
     lighting = LightingConfig(states=raw.get("lighting", {}).get("states", {}))
 

@@ -29,13 +29,23 @@ MINIMAL_YAML = textwrap.dedent("""\
           key: "2"
           enabled: true
     state_machine:
-      return_to_after_correct: idle
-      return_to_after_incorrect: idle
-      return_to_after_round_start: idle
-      correct_hold_seconds: 2.0
-      incorrect_hold_seconds: 2.0
-      buzz_timeout_hold_seconds: 0.5
-      round_start_hold_seconds: 2.0
+      initial: idle
+      global:
+        clear: { to: idle, do: [clear_bans, clear_player] }
+      states:
+        idle:
+          transitions: { buzz: locked }
+        locked:
+          behaviors: [countdown]
+          transitions:
+            countdown_expire: buzz_timeout
+            correct: correct
+            incorrect: { to: incorrect, do: [ban_current] }
+        correct: { hold: 2.0, then: idle }
+        incorrect: { hold: 2.0, then: idle }
+        buzz_timeout:
+          hold: 0.5
+          then: { to: idle, do: [ban_current, clear_player], when_all_banned: idle }
     lighting:
       states:
         idle: "/palette/Idle/activate"
@@ -100,10 +110,92 @@ def test_all_enabled_then_per_player_override():
     assert players[2].enabled is False
 
 
-def test_invalid_return_to_raises():
+def test_state_machine_parses_initial_and_states():
+    sm = parse_config(load(MINIMAL_YAML)).state_machine
+    assert sm.initial == "idle"
+    assert set(sm.states) >= {"idle", "locked", "correct", "incorrect", "buzz_timeout"}
+
+
+def test_string_transition_parses_to_transition_config():
+    tr = parse_config(load(MINIMAL_YAML)).state_machine.states["idle"].transitions["buzz"]
+    assert tr.to == "locked"
+    assert tr.do == []
+    assert tr.when_all_banned is None
+
+
+def test_mapping_transition_parses_do_and_guard():
+    tr = parse_config(load(MINIMAL_YAML)).state_machine.states["buzz_timeout"].then
+    assert tr.to == "idle"
+    assert tr.do == ["ban_current", "clear_player"]
+    assert tr.when_all_banned == "idle"
+
+
+def test_behaviors_and_hold_parsed():
+    sm = parse_config(load(MINIMAL_YAML)).state_machine
+    assert sm.states["locked"].behaviors == ["countdown"]
+    assert sm.states["correct"].hold == 2.0
+    assert sm.states["correct"].then.to == "idle"
+
+
+def test_global_transitions_parsed():
+    clear = parse_config(load(MINIMAL_YAML)).state_machine.global_["clear"]
+    assert clear.to == "idle"
+    assert clear.do == ["clear_bans", "clear_player"]
+
+
+def test_missing_state_machine_raises():
     raw = load(MINIMAL_YAML)
-    raw["state_machine"]["return_to_after_correct"] = "game_over"
-    with pytest.raises(ValueError, match="return_to_after_correct"):
+    del raw["state_machine"]
+    with pytest.raises(ValueError, match="state_machine"):
+        parse_config(raw)
+
+
+def test_missing_states_raises():
+    raw = load(MINIMAL_YAML)
+    del raw["state_machine"]["states"]
+    with pytest.raises(ValueError, match="states"):
+        parse_config(raw)
+
+
+def test_missing_initial_raises():
+    raw = load(MINIMAL_YAML)
+    del raw["state_machine"]["initial"]
+    with pytest.raises(ValueError, match="initial"):
+        parse_config(raw)
+
+
+def test_initial_not_in_states_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["initial"] = "ghost"
+    with pytest.raises(ValueError, match="ghost"):
+        parse_config(raw)
+
+
+def test_unknown_transition_target_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["idle"]["transitions"]["buzz"] = "nowhere"
+    with pytest.raises(ValueError, match="nowhere"):
+        parse_config(raw)
+
+
+def test_unknown_guard_target_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["buzz_timeout"]["then"]["when_all_banned"] = "nowhere"
+    with pytest.raises(ValueError, match="nowhere"):
+        parse_config(raw)
+
+
+def test_unknown_behavior_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["behaviors"] = ["teleport"]
+    with pytest.raises(ValueError, match="teleport"):
+        parse_config(raw)
+
+
+def test_unknown_do_behavior_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["transitions"]["incorrect"]["do"] = ["explode"]
+    with pytest.raises(ValueError, match="explode"):
         parse_config(raw)
 
 
