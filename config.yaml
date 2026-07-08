@@ -1,9 +1,9 @@
 service:
   osc_server_host: "0.0.0.0"
   osc_server_port: 21601
-  dmx_osc_host: "10.11.0.104"
+  dmx_osc_host: "10.11.0.103"
   dmx_osc_port: 21600
-  obs_host: "10.11.0.104"
+  obs_host: "10.11.0.103"
   obs_port: 4455
   obs_password: ""
   touchosc_host: "127.0.0.1"
