@@ -3,7 +3,7 @@ import textwrap
 import yaml
 from gameshow.config import (
     parse_config, deep_merge, apply_scene_override,
-    AppConfig,
+    AppConfig, Behavior,
 )
 
 MINIMAL_YAML = textwrap.dedent("""\
@@ -29,13 +29,23 @@ MINIMAL_YAML = textwrap.dedent("""\
           key: "2"
           enabled: true
     state_machine:
-      return_to_after_correct: idle
-      return_to_after_incorrect: idle
-      return_to_after_round_start: idle
-      correct_hold_seconds: 2.0
-      incorrect_hold_seconds: 2.0
-      buzz_timeout_hold_seconds: 0.5
-      round_start_hold_seconds: 2.0
+      initial: idle
+      global:
+        clear: { to: idle, do: [clear_bans, clear_player] }
+      states:
+        idle:
+          transitions: { buzz: locked }
+        locked:
+          behaviors: [countdown]
+          transitions:
+            countdown_expire: buzz_timeout
+            correct: correct
+            incorrect: { to: incorrect, do: [ban_current] }
+        correct: { hold: 2.0, then: idle }
+        incorrect: { hold: 2.0, then: idle }
+        buzz_timeout:
+          hold: 0.5
+          then: { to: idle, do: [ban_current, clear_player], when_all_banned: idle }
     lighting:
       states:
         idle: "/palette/Idle/activate"
@@ -100,10 +110,228 @@ def test_all_enabled_then_per_player_override():
     assert players[2].enabled is False
 
 
-def test_invalid_return_to_raises():
+def test_state_machine_parses_initial_and_states():
+    sm = parse_config(load(MINIMAL_YAML)).state_machine
+    assert sm.initial == "idle"
+    assert set(sm.states) >= {"idle", "locked", "correct", "incorrect", "buzz_timeout"}
+
+
+def test_string_transition_parses_to_transition_config():
+    tr = parse_config(load(MINIMAL_YAML)).state_machine.states["idle"].transitions["buzz"]
+    assert tr.to == "locked"
+    assert tr.do == []
+    assert tr.when_all_banned is None
+
+
+def test_mapping_transition_parses_do_and_guard():
+    tr = parse_config(load(MINIMAL_YAML)).state_machine.states["buzz_timeout"].then
+    assert tr.to == "idle"
+    assert tr.do == [Behavior("ban_current"), Behavior("clear_player")]
+    assert tr.when_all_banned == "idle"
+
+
+def test_behaviors_and_hold_parsed():
+    sm = parse_config(load(MINIMAL_YAML)).state_machine
+    assert sm.states["locked"].behaviors == [Behavior("countdown")]
+    assert sm.states["correct"].hold == 2.0
+    assert sm.states["correct"].then.to == "idle"
+
+
+def test_global_transitions_parsed():
+    clear = parse_config(load(MINIMAL_YAML)).state_machine.global_["clear"]
+    assert clear.to == "idle"
+    assert clear.do == [Behavior("clear_bans"), Behavior("clear_player")]
+
+
+def test_missing_state_machine_raises():
     raw = load(MINIMAL_YAML)
-    raw["state_machine"]["return_to_after_correct"] = "game_over"
-    with pytest.raises(ValueError, match="return_to_after_correct"):
+    del raw["state_machine"]
+    with pytest.raises(ValueError, match="state_machine"):
+        parse_config(raw)
+
+
+def test_missing_states_raises():
+    raw = load(MINIMAL_YAML)
+    del raw["state_machine"]["states"]
+    with pytest.raises(ValueError, match="states"):
+        parse_config(raw)
+
+
+def test_missing_initial_raises():
+    raw = load(MINIMAL_YAML)
+    del raw["state_machine"]["initial"]
+    with pytest.raises(ValueError, match="initial"):
+        parse_config(raw)
+
+
+def test_initial_not_in_states_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["initial"] = "ghost"
+    with pytest.raises(ValueError, match="ghost"):
+        parse_config(raw)
+
+
+def test_unknown_transition_target_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["idle"]["transitions"]["buzz"] = "nowhere"
+    with pytest.raises(ValueError, match="nowhere"):
+        parse_config(raw)
+
+
+def test_unknown_guard_target_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["buzz_timeout"]["then"]["when_all_banned"] = "nowhere"
+    with pytest.raises(ValueError, match="nowhere"):
+        parse_config(raw)
+
+
+def test_unknown_behavior_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["behaviors"] = ["teleport"]
+    with pytest.raises(ValueError, match="teleport"):
+        parse_config(raw)
+
+
+def test_unknown_do_behavior_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["transitions"]["incorrect"]["do"] = ["explode"]
+    with pytest.raises(ValueError, match="explode"):
+        parse_config(raw)
+
+
+def test_behavior_string_and_map_parse():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["transitions"]["correct"] = {
+        "to": "correct", "do": ["ban_current", {"award": 100}],
+    }
+    cfg = parse_config(raw)
+    do = cfg.state_machine.states["locked"].transitions["correct"].do
+    assert do == [Behavior("ban_current", None), Behavior("award", 100)]
+
+
+def test_bare_string_behaviors_stay_backward_compatible():
+    # Existing string-only behavior lists still parse into Behavior objects.
+    cfg = parse_config(load(MINIMAL_YAML))
+    do = cfg.state_machine.states["locked"].transitions["incorrect"].do
+    assert do == [Behavior("ban_current", None)]
+
+
+def test_scoring_config_parses():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["scoring"] = {"default_award": 200, "default_deduct": 50}
+    cfg = parse_config(raw)
+    assert cfg.state_machine.scoring.default_award == 200
+    assert cfg.state_machine.scoring.default_deduct == 50
+
+
+def test_no_scoring_config_is_none():
+    cfg = parse_config(load(MINIMAL_YAML))
+    assert cfg.state_machine.scoring is None
+
+
+def test_reset_scores_on_enter_parses():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["reset_scores_on_enter"] = True
+    assert parse_config(raw).state_machine.reset_scores_on_enter is True
+
+
+def test_unknown_map_behavior_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["transitions"]["correct"] = {
+        "to": "correct", "do": [{"teleport": 1}],
+    }
+    with pytest.raises(ValueError, match="teleport"):
+        parse_config(raw)
+
+
+def test_shipped_config_defines_buzz_in_mode_machines():
+    import yaml as _yaml
+    for path in ("config.yaml", "config.example.yaml"):
+        with open(path) as f:
+            raw = _yaml.safe_load(f)
+        machines = raw.get("state_machines", {})
+        assert {"buzz_open", "buzz_timeout", "buzz_after_incorrect"} <= set(machines), path
+        parse_config(raw)   # resolves + validates the active machine and library
+
+
+def test_counters_config_parses():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["counters"] = {"strikes": {"max": 3, "initial": 0}}
+    cfg = parse_config(raw)
+    assert cfg.state_machine.counters["strikes"].max == 3
+    assert cfg.state_machine.counters["strikes"].initial == 0
+
+
+def test_when_counter_at_guard_parses():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["counters"] = {"strikes": {"max": 3}}
+    raw["state_machine"]["states"]["locked"]["transitions"]["incorrect"] = {
+        "to": "incorrect", "do": [{"increment": "strikes"}],
+        "when_counter_at": {"counter": "strikes", "value": 3, "to": "buzz_timeout"},
+    }
+    guard = parse_config(raw).state_machine.states["locked"].transitions["incorrect"].when_counter_at
+    assert guard.counter == "strikes"
+    assert guard.value == 3
+    assert guard.to == "buzz_timeout"
+
+
+def test_when_counter_at_unknown_counter_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["transitions"]["incorrect"] = {
+        "to": "incorrect", "when_counter_at": {"counter": "ghost", "value": 3, "to": "idle"},
+    }
+    with pytest.raises(ValueError, match="ghost"):
+        parse_config(raw)
+
+
+def _with_library(raw: dict) -> dict:
+    """Move the inline state_machine into a 'standard' library entry + reference it."""
+    raw = dict(raw)
+    raw["state_machines"] = {"standard": raw["state_machine"]}
+    raw["state_machine"] = "standard"
+    return raw
+
+
+def test_inline_state_machine_still_parses():
+    # The pre-library form (inline dict) must keep working.
+    cfg = parse_config(load(MINIMAL_YAML))
+    assert cfg.state_machine.initial == "idle"
+    assert "locked" in cfg.state_machine.states
+
+
+def test_state_machine_string_reference_resolves():
+    cfg = parse_config(_with_library(load(MINIMAL_YAML)))
+    assert cfg.state_machine.initial == "idle"
+    assert "buzz_timeout" in cfg.state_machine.states
+
+
+def test_state_machine_extends_merges_overrides():
+    raw = _with_library(load(MINIMAL_YAML))
+    raw["state_machine"] = {"extends": "standard",
+                            "states": {"correct": {"hold": 9.0, "then": "idle"}}}
+    cfg = parse_config(raw)
+    assert cfg.state_machine.states["correct"].hold == 9.0   # override applied
+    assert "buzz_timeout" in cfg.state_machine.states        # base states preserved
+
+
+def test_unknown_machine_reference_raises():
+    raw = _with_library(load(MINIMAL_YAML))
+    raw["state_machine"] = "nope"
+    with pytest.raises(ValueError, match="nope"):
+        parse_config(raw)
+
+
+def test_extends_unknown_base_raises():
+    raw = _with_library(load(MINIMAL_YAML))
+    raw["state_machine"] = {"extends": "ghost", "states": {}}
+    with pytest.raises(ValueError, match="ghost"):
+        parse_config(raw)
+
+
+def test_malformed_library_entry_raises():
+    raw = _with_library(load(MINIMAL_YAML))
+    raw["state_machines"]["broken"] = {"states": {"idle": {}}}  # missing 'initial'
+    with pytest.raises(ValueError, match="broken"):
         parse_config(raw)
 
 

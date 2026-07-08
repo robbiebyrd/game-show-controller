@@ -11,7 +11,7 @@ from gameshow.config import (
 )
 from gameshow.events import (
     ControlCommand, BuzzerPressed, StateChanged, SceneChanged,
-    CountdownTick, CountdownEnded, GameState,
+    CountdownTick, CountdownEnded, ScoreChanged, CounterChanged,
 )
 from gameshow.control_surface import ControlSurface, RETURN_KEY
 
@@ -69,7 +69,7 @@ def make_config(root_buttons=None, label_align="bottom", label_wrap=False,
     return AppConfig(
         service=ServiceConfig(),
         buzzers=BuzzerConfig(players=[]),
-        state_machine=StateMachineConfig(),
+        state_machine=StateMachineConfig(initial="idle"),
         lighting=LightingConfig(),
         audio=AudioConfig(),
         obs=OBSConfig(),
@@ -169,6 +169,7 @@ def test_layout_overflow_drops_extra_buttons():
     (ButtonConfig(type="countdown", action="pause"), ("countdown_pause", ())),
     (ButtonConfig(type="countdown", action="reset"), ("countdown_reset", ())),
     (ButtonConfig(type="countdown", action="cancel"), ("countdown_cancel", ())),
+    (ButtonConfig(type="set_award", value=200), ("set_award", (200,))),
 ])
 async def test_dispatch_publishes_control_command(button, expected):
     bus, cs, deck = make_surface([button])
@@ -182,6 +183,25 @@ async def test_dispatch_publishes_control_command(button, expected):
     await cs._on_key(deck, 0, True)
     cmd, args = expected
     assert any(e.command == cmd and e.args == args for e in published)
+
+
+@pytest.mark.asyncio
+async def test_score_display_reflects_score_changes():
+    button = ButtonConfig(type="score_display", name="scores")
+    bus, cs, deck = make_surface([button])
+    assert cs._dynamic_value(button) is not None          # renders even with no scores
+    await cs._on_score(ScoreChanged(player_id=1, score=300, delta=300))
+    await cs._on_score(ScoreChanged(player_id=2, score=150, delta=150))
+    text = cs._dynamic_value(button)
+    assert "300" in text and "150" in text
+
+
+@pytest.mark.asyncio
+async def test_counter_display_reflects_counter_changes():
+    button = ButtonConfig(type="counter_display", counter="strikes", name="strikes")
+    bus, cs, deck = make_surface([button])
+    await cs._on_counter(CounterChanged(name="strikes", value=2))
+    assert cs._dynamic_value(button) == "2"
 
 
 @pytest.mark.asyncio
@@ -268,7 +288,7 @@ async def test_deck_backend_error_is_inert():
     await cs.start()  # must not raise
     assert cs._deck is None
     # events must not raise either
-    await bus.publish(StateChanged(new_state=GameState.LOCKED))
+    await bus.publish(StateChanged(new_state="locked"))
     await cs.stop()
 
 
@@ -296,7 +316,7 @@ async def test_no_deck_is_inert():
     # events must not raise
     await bus.publish(CountdownTick(remaining=3.0, total=5.0))
     await bus.publish(SceneChanged(index=1, name="Intro"))
-    await bus.publish(StateChanged(new_state=GameState.LOCKED))
+    await bus.publish(StateChanged(new_state="locked"))
     await cs.stop()
 
 
@@ -354,7 +374,7 @@ async def test_state_changed_updates_state_display_key():
     await cs.start()
     key = cs._key_of(btn)
     calls = deck.image_calls[key]
-    await bus.publish(StateChanged(new_state=GameState.LOCKED))
+    await bus.publish(StateChanged(new_state="locked"))
     assert deck.image_calls[key] == calls + 1
     await cs.stop()
 

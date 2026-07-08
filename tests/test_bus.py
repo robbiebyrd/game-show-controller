@@ -1,7 +1,7 @@
 import logging
 import pytest
 from gameshow.bus import EventBus
-from gameshow.events import BuzzerPressed, StateChanged, GameState, CountdownTick
+from gameshow.events import BuzzerPressed, StateChanged, CountdownTick
 
 
 @pytest.mark.asyncio
@@ -28,7 +28,7 @@ async def test_subscriber_not_called_for_other_event_type():
         received.append(event)
 
     bus.subscribe(BuzzerPressed, handler)
-    await bus.publish(StateChanged(new_state=GameState.IDLE))
+    await bus.publish(StateChanged(new_state="idle"))
 
     assert len(received) == 0
 

@@ -35,6 +35,19 @@ apt-get install -y \
     python3-xlib \
     python3-evdev
 
+# ── DMX USB access ───────────────────────────────────────────────────────────
+# The OLA container runs olad unprivileged (olad refuses to run as root), so the
+# ENTTEC Open DMX USB (FTDI FT232, 0403:6001) must be world-accessible for the
+# ftdidmx plugin to open it via libusb and detach the ftdi_sio kernel driver.
+DMX_RULES_FILE="/etc/udev/rules.d/99-enttec-dmx.rules"
+log "Installing udev rule for ENTTEC Open DMX USB..."
+cat > "${DMX_RULES_FILE}" <<'EOF'
+# ENTTEC Open DMX USB (FTDI FT232) — grant non-root access for OLA's ftdidmx plugin
+SUBSYSTEM=="usb", ATTR{idVendor}=="0403", ATTR{idProduct}=="6001", MODE="0666"
+EOF
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=usb
+
 # ── Repository ─────────────────────────────────────────────────────────────────
 if [[ -d "${INSTALL_DIR}/.git" ]]; then
     log "Updating existing install to branch '${BRANCH}'..."
@@ -84,6 +97,19 @@ systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 systemctl restart "${SERVICE_NAME}"
 
+# ── OLA DMX container ─────────────────────────────────────────────────────────
+# Runs olad (Open Lighting Architecture) in Docker to drive the ENTTEC Open DMX
+# USB. `restart: unless-stopped` in the compose file + the enabled docker service
+# bring it back on reboot, so no separate systemd unit is needed.
+if ! command -v docker >/dev/null 2>&1; then
+    log "Installing Docker..."
+    curl -fsSL https://get.docker.com | sh
+fi
+systemctl enable --now docker
+
+log "Building and starting OLA container..."
+docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d --build
+
 # ── Done ───────────────────────────────────────────────────────────────────────
 log "Deployment complete."
 echo
@@ -91,4 +117,8 @@ systemctl status "${SERVICE_NAME}" --no-pager || true
 echo
 log "Follow logs with: journalctl -u ${SERVICE_NAME} -f"
 log "Restart service:  sudo systemctl restart ${SERVICE_NAME}"
+echo
+log "OLA web UI:       http://\$(hostname -i | awk '{print \$1}'):9090"
+log "OLA logs:         docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
+log "Restart OLA:      docker compose -f ${INSTALL_DIR}/docker-compose.yml restart"
 log "Stop service:     sudo systemctl stop ${SERVICE_NAME}"

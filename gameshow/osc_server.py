@@ -7,7 +7,15 @@ from pythonosc.osc_server import AsyncIOOSCUDPServer
 from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
-from gameshow.events import ControlCommand, SceneChanged, StateChanged, PlayerBuzzed, GameState
+from gameshow.events import (
+    ControlCommand, SceneChanged, StateChanged, PlayerBuzzed,
+    ScoreChanged, AwardChanged, CounterChanged
+)
+
+# States after which the on-screen player label is cleared (the round's result
+# is in, so nobody is "buzzed in" anymore). These are conventional state names;
+# renaming them in config simply means the label won't auto-clear on them.
+_PLAYER_RESET_STATES = {"correct", "incorrect", "idle"}
 
 log = logging.getLogger(__name__)
 
@@ -54,12 +62,15 @@ class OSCServer:
         self._bus.subscribe(StateChanged, self._on_state_changed)
         self._bus.subscribe(PlayerBuzzed, self._on_player_buzzed)
         self._bus.subscribe(SceneChanged, self._on_scene_changed)
+        self._bus.subscribe(ScoreChanged, self._on_score_changed)
+        self._bus.subscribe(AwardChanged, self._on_award_changed)
+        self._bus.subscribe(CounterChanged, self._on_counter_changed)
 
     async def _on_state_changed(self, event: StateChanged) -> None:
-        self._feedback("/feedback/state", event.new_state.name.lower())
-        if event.new_state == GameState.TIMED_LOCKOUT and event.duration is not None:
+        self._feedback("/feedback/state", event.new_state)
+        if event.duration is not None:
             self._feedback("/feedback/timed_lockout/duration", event.duration)
-        if event.new_state in (GameState.CORRECT, GameState.INCORRECT, GameState.IDLE):
+        if event.new_state in _PLAYER_RESET_STATES:
             self._feedback("/feedback/player", "None")
 
     async def _on_player_buzzed(self, event: PlayerBuzzed) -> None:
@@ -67,6 +78,15 @@ class OSCServer:
 
     async def _on_scene_changed(self, event: SceneChanged) -> None:
         self._feedback("/feedback/scene", f"{event.index}: {event.name}")
+
+    async def _on_score_changed(self, event: ScoreChanged) -> None:
+        self._feedback(f"/feedback/score/{event.player_id}", event.score)
+
+    async def _on_award_changed(self, event: AwardChanged) -> None:
+        self._feedback("/feedback/award", event.value if event.value is not None else "None")
+
+    async def _on_counter_changed(self, event: CounterChanged) -> None:
+        self._feedback(f"/feedback/counter/{event.name}", event.value)
 
     async def _dispatch(self, address: str, args: list[Any]) -> None:
         log.info("IN  OSC %s %s", address, args)

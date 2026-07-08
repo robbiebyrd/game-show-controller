@@ -24,7 +24,7 @@ class DMXClient:
 
     async def _on_state_changed(self, event: StateChanged) -> None:
         states = self._config().lighting.states
-        cue = states.get(event.new_state.name.lower())
+        cue = states.get(event.new_state)
         if cue:
             self._send(cue)
 

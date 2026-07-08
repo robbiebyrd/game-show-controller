@@ -23,14 +23,29 @@ buzzers:
     - {id: 1, name: P1, key: "1", enabled: true}
     - {id: 2, name: P2, key: "2", enabled: true}
 state_machine:
-  return_to_after_correct: idle
-  return_to_after_incorrect: idle
-  return_to_after_buzz_timeout: idle
-  return_to_after_round_start: idle
-  correct_hold_seconds: 2.0
-  incorrect_hold_seconds: 2.0
-  buzz_timeout_hold_seconds: 3.0
-  round_start_hold_seconds: 2.0
+  initial: idle
+  global:
+    clear: { to: idle, do: [clear_bans, clear_player] }
+    game_over: { to: game_over, do: [clear_bans, clear_player] }
+    round_start: round_start
+    timed_lockout: timed_lockout
+  states:
+    idle:
+      transitions: { buzz: locked }
+    locked:
+      behaviors: [countdown]
+      transitions:
+        countdown_expire: buzz_timeout
+        correct: correct
+        incorrect: { to: incorrect, do: [ban_current] }
+        allow_next: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle }
+    correct: { hold: 2.0, then: idle }
+    incorrect: { hold: 2.0, then: idle, transitions: { buzz: locked } }
+    allow_next: { transitions: { buzz: locked } }
+    buzz_timeout: { hold: 3.0, then: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle } }
+    timed_lockout: { hold_from_arg: 5.0, then: idle }
+    round_start: { hold: 2.0, then: idle }
+    game_over: {}
 lighting:
   states:
     idle: "/palette/Idle/activate"
@@ -49,7 +64,9 @@ show:
         all_enabled: false
     - name: "Round 1"
       state_machine:
-        return_to_after_incorrect: allow_next
+        states:
+          incorrect:
+            then: allow_next
     - name: "Round 2"
 """
 
@@ -132,5 +149,5 @@ async def test_scene_override_merges_state_machine():
     sm, bus = make_manager()
     await sm.goto_name("Round 1")
     cfg = sm.current_config
-    assert cfg.state_machine.return_to_after_incorrect == "allow_next"
-    assert cfg.state_machine.return_to_after_correct == "idle"  # global default preserved
+    assert cfg.state_machine.states["incorrect"].then.to == "allow_next"
+    assert cfg.state_machine.states["correct"].then.to == "idle"  # global default preserved
