@@ -29,10 +29,14 @@ buzzers:
       key: "4"
       enabled: false
 
-# The game flow is a fully data-driven state machine. `initial` is the starting
-# state; `states` defines every state and its transitions; `global` lists
-# triggers that work from any state.
+# The game flow is a data-driven state machine. Machines live in a named library
+# (`state_machines`); `state_machine` picks the active default by name. A scene
+# may set its own `state_machine` — a library name, an inline machine, or
+# `{ extends: <name>, ...overrides }` to tweak a named one — so each round can
+# play by different rules.
 #
+# Within a machine: `initial` is the starting state; `states` defines every state
+# and its `transitions`; `global` lists triggers that work from any state.
 # A trigger fires when a matching ControlCommand (or the `buzz` trigger, from a
 # buzzer press) arrives. Its value is either a target-state name, or a mapping:
 #   { to: <state>, do: [<behavior>...], when_all_banned: <state> }
@@ -47,35 +51,38 @@ buzzers:
 #
 # NOTE: the transition-table key is `transitions`, NOT `on` — YAML would coerce
 # an unquoted `on:` key to the boolean true.
-state_machine:
-  initial: idle
-  global:
-    clear:         { to: idle,      do: [clear_bans, clear_player] }
-    game_over:     { to: game_over, do: [clear_bans, clear_player] }
-    round_start:   round_start
-    timed_lockout: timed_lockout          # duration taken from the command argument
-  states:
-    idle:
-      transitions: { buzz: locked }       # a buzzer press locks that player
-    locked:
-      behaviors: [countdown]              # start the buzz-timeout countdown on entry
-      transitions:
-        countdown_expire: buzz_timeout    # fired when the countdown runs out
-        correct: correct
-        incorrect: { to: incorrect, do: [ban_current] }
-        allow_next:
-          to: allow_next
-          do: [ban_current, clear_player]
-          when_all_banned: idle           # everyone banned → clear bans and reset
-    correct:       { hold: 2.0, then: idle }
-    incorrect:     { hold: 2.0, then: idle, transitions: { buzz: locked } }
-    allow_next:    { transitions: { buzz: locked } }
-    buzz_timeout:
-      hold: 0.5
-      then: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle }
-    timed_lockout: { hold_from_arg: 5.0, then: idle }
-    round_start:   { hold: 2.0, then: idle }
-    game_over:     {}
+state_machine: standard
+
+state_machines:
+  standard:
+    initial: idle
+    global:
+      clear:         { to: idle,      do: [clear_bans, clear_player] }
+      game_over:     { to: game_over, do: [clear_bans, clear_player] }
+      round_start:   round_start
+      timed_lockout: timed_lockout          # duration taken from the command argument
+    states:
+      idle:
+        transitions: { buzz: locked }       # a buzzer press locks that player
+      locked:
+        behaviors: [countdown]              # start the buzz-timeout countdown on entry
+        transitions:
+          countdown_expire: buzz_timeout    # fired when the countdown runs out
+          correct: correct
+          incorrect: { to: incorrect, do: [ban_current] }
+          allow_next:
+            to: allow_next
+            do: [ban_current, clear_player]
+            when_all_banned: idle           # everyone banned → clear bans and reset
+      correct:       { hold: 2.0, then: idle }
+      incorrect:     { hold: 2.0, then: idle, transitions: { buzz: locked } }
+      allow_next:    { transitions: { buzz: locked } }
+      buzz_timeout:
+        hold: 0.5
+        then: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle }
+      timed_lockout: { hold_from_arg: 5.0, then: idle }
+      round_start:   { hold: 2.0, then: idle }
+      game_over:     {}
 
 lighting:
   states:
@@ -151,7 +158,8 @@ show:
       on_enter:
         audio_background: "music/Game Level Up 1.mp3"
         obs_scene: "Round1_Board"
-      state_machine:                    # scene overrides deep-merge into the base
+      state_machine:                    # tweak the standard machine for this round
+        extends: standard
         states:
           incorrect:
             then: allow_next            # this round: a wrong answer opens the buzzers
