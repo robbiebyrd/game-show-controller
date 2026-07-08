@@ -9,7 +9,7 @@ from gameshow.bus import EventBus
 from gameshow.config import AppConfig
 from gameshow.events import (
     ControlCommand, SceneChanged, StateChanged, PlayerBuzzed,
-    ScoreChanged, AwardChanged, CounterChanged
+    ScoreChanged, AwardChanged, CounterChanged, ConfigReloaded
 )
 
 # States after which the on-screen player label is cleared (the round's result
@@ -65,6 +65,7 @@ class OSCServer:
         self._bus.subscribe(ScoreChanged, self._on_score_changed)
         self._bus.subscribe(AwardChanged, self._on_award_changed)
         self._bus.subscribe(CounterChanged, self._on_counter_changed)
+        self._bus.subscribe(ConfigReloaded, self._on_config_reloaded)
 
     async def _on_state_changed(self, event: StateChanged) -> None:
         self._feedback("/feedback/state", event.new_state)
@@ -88,6 +89,11 @@ class OSCServer:
     async def _on_counter_changed(self, event: CounterChanged) -> None:
         self._feedback(f"/feedback/counter/{event.name}", event.value)
 
+    async def _on_config_reloaded(self, event: ConfigReloaded) -> None:
+        show = self._config().show
+        self._feedback("/feedback/show/name", show.name or "")
+        self._feedback("/feedback/show/description", show.description or "")
+
     async def _dispatch(self, address: str, args: list[Any]) -> None:
         log.info("IN  OSC %s %s", address, args)
         if address in _SIMPLE_COMMANDS:
@@ -97,6 +103,11 @@ class OSCServer:
         if address == "/buzzer/timed_lockout":
             duration = float(args[0]) if args else 5.0
             await self._bus.publish(ControlCommand(command="timed_lockout", args=(duration,)))
+            return
+
+        if address == "/config/reload":
+            args = (str(args[0]),) if args else ()
+            await self._bus.publish(ControlCommand(command="config_reload", args=args))
             return
 
         if address == "/show/goto":
@@ -124,7 +135,7 @@ class OSCServer:
         cfg = self._config().service
         dispatcher = Dispatcher()
         for address in list(_SIMPLE_COMMANDS.keys()) + [
-            "/buzzer/timed_lockout", "/show/goto",
+            "/buzzer/timed_lockout", "/show/goto", "/config/reload",
             "/audio/background/play", "/audio/background/volume",
             "/audio/effect/play", "/audio/effect/volume",
         ]:

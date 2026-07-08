@@ -2,14 +2,15 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock
 from gameshow.bus import EventBus
-from gameshow.config import AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig, StateMachineConfig, LightingConfig, AudioConfig, OBSConfig
+from gameshow.config import AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig, StateMachineConfig, LightingConfig, AudioConfig, OBSConfig, ShowConfig
 from gameshow.events import (
-    ControlCommand, SceneChanged, StateChanged, ScoreChanged, AwardChanged, CounterChanged
+    ControlCommand, SceneChanged, StateChanged, ScoreChanged, AwardChanged, CounterChanged,
+    ConfigReloaded,
 )
 from gameshow.osc_server import OSCServer
 
 
-def make_config():
+def make_config(show=None):
     return AppConfig(
         service=ServiceConfig(touchosc_host="127.0.0.1", touchosc_port=9001),
         buzzers=BuzzerConfig(players=[]),
@@ -18,6 +19,7 @@ def make_config():
         audio=AudioConfig(),
         obs=OBSConfig(),
         scenes=[],
+        show=show or ShowConfig(),
     )
 
 
@@ -142,3 +144,44 @@ async def test_feedback_player_not_cleared_on_locked_state():
     calls = [call for call in mock_client.send_message.call_args_list
              if call.args[0] == "/feedback/player"]
     assert not calls
+
+
+@pytest.mark.asyncio
+async def test_config_reload_with_path_publishes_command():
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    received = []
+    async def capture(e): received.append(e)
+    bus.subscribe(ControlCommand, capture)
+
+    await server._dispatch("/config/reload", ["jeopardy.yml"])
+    assert received[0].command == "config_reload"
+    assert received[0].args == ("jeopardy.yml",)
+
+
+@pytest.mark.asyncio
+async def test_config_reload_without_path_publishes_bare_command():
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    received = []
+    async def capture(e): received.append(e)
+    bus.subscribe(ControlCommand, capture)
+
+    await server._dispatch("/config/reload", [])
+    assert received[0].command == "config_reload"
+    assert received[0].args == ()
+
+
+@pytest.mark.asyncio
+async def test_config_reloaded_emits_show_feedback():
+    bus = EventBus()
+    show = ShowConfig(name="Jeopardy Night", description="Trivia showdown")
+    server = OSCServer(bus, lambda: make_config(show=show))
+    mock_client = MagicMock()
+    server._feedback_client = mock_client
+
+    await bus.publish(ConfigReloaded(path="shows/jeopardy.yml"))
+
+    sent = {c.args[0]: c.args[1] for c in mock_client.send_message.call_args_list}
+    assert sent["/feedback/show/name"] == ["Jeopardy Night"]
+    assert sent["/feedback/show/description"] == ["Trivia showdown"]
