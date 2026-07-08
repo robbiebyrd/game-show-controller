@@ -12,7 +12,7 @@ from gameshow.bus import EventBus
 from gameshow.config import AppConfig, ButtonConfig, PageConfig
 from gameshow.events import (
     ControlCommand, BuzzerPressed, StateChanged, SceneChanged,
-    CountdownTick, CountdownEnded, ScoreChanged, CounterChanged,
+    CountdownTick, CountdownEnded, ScoreChanged, CounterChanged, ConfigReloaded,
 )
 
 log = logging.getLogger(__name__)
@@ -251,6 +251,7 @@ class ControlSurface:
         self._bus.subscribe(StateChanged, self._on_state)
         self._bus.subscribe(ScoreChanged, self._on_score)
         self._bus.subscribe(CounterChanged, self._on_counter)
+        self._bus.subscribe(ConfigReloaded, self._on_config_reloaded)
 
         await self._render()
         self._marquee_task = asyncio.create_task(self._marquee_loop())
@@ -278,7 +279,7 @@ class ControlSurface:
         layout: dict[int, ButtonConfig] = {}
         reserved: set[int] = set()
         if is_subpage:
-            layout[RETURN_KEY] = ButtonConfig(type="return", label="Back")
+            layout[RETURN_KEY] = ButtonConfig(type="return", fa_icon="caret-large-left", font_size=56)
             reserved.add(RETURN_KEY)
 
         for button in page.buttons:
@@ -358,6 +359,10 @@ class ControlSurface:
         if t == "obs_request" and button.request_type:
             await self._bus.publish(ControlCommand(
                 command="obs_request", args=(button.request_type, button.request_data)))
+            return
+        if t == "config_reload":
+            args = (button.config,) if button.config else ()
+            await self._bus.publish(ControlCommand(command="config_reload", args=args))
             return
         if t == "countdown":
             action = button.action or "display"
@@ -634,3 +639,22 @@ class ControlSurface:
     async def _on_counter(self, event: CounterChanged) -> None:
         self._counters[event.name] = event.value
         self._refresh_type("counter_display")
+
+    async def _on_config_reloaded(self, event: ConfigReloaded) -> None:
+        # A reloaded config brings a fresh surface layout and defaults: refresh the
+        # cached surface, drop caches keyed to the old config, wipe live readouts,
+        # and redraw from the new root page.
+        cs = self._config().control_surface
+        if cs is None:
+            return
+        self._cs = cs
+        self._stack.clear()
+        self._font_cache.clear()
+        self._fa_meta = None
+        self._scores.clear()
+        self._counters.clear()
+        self._last_scene = "—"
+        self._last_state = "idle"
+        if self._deck is not None:
+            self._deck.set_brightness(cs.brightness)
+        await self._render()

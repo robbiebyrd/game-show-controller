@@ -170,6 +170,8 @@ def test_layout_overflow_drops_extra_buttons():
     (ButtonConfig(type="countdown", action="reset"), ("countdown_reset", ())),
     (ButtonConfig(type="countdown", action="cancel"), ("countdown_cancel", ())),
     (ButtonConfig(type="set_award", value=200), ("set_award", (200,))),
+    (ButtonConfig(type="config_reload", config="jeopardy.yml"), ("config_reload", ("jeopardy.yml",))),
+    (ButtonConfig(type="config_reload"), ("config_reload", ())),
 ])
 async def test_dispatch_publishes_control_command(button, expected):
     bus, cs, deck = make_surface([button])
@@ -262,6 +264,39 @@ async def test_page_button_pushes_and_return_pops():
 # --------------------------------------------------------------------------
 # Rendering, live updates, lifecycle (Step 5)
 # --------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_config_reloaded_refreshes_cs_and_rerenders():
+    from gameshow.events import ConfigReloaded
+    bus = EventBus()
+    holder = [make_config([ButtonConfig(type="state", label="A", state="clear")])]
+    deck = FakeDeck()
+    cs = ControlSurface(bus, lambda: holder[0], deck_factory=lambda: [deck])
+    await cs.start()
+    assert deck.brightness == 42
+    cs._stack.append(PageConfig(buttons=[]))  # pretend a subpage is open
+
+    new_cfg = make_config([ButtonConfig(type="state", label="B", state="game_over")])
+    new_cfg.control_surface.brightness = 80
+    holder[0] = new_cfg
+    await bus.publish(ConfigReloaded(path="shows/x.yml"))
+
+    assert cs._cs is new_cfg.control_surface   # cached surface refreshed
+    assert deck.brightness == 80               # brightness re-applied
+    assert cs._stack == []                     # navigation reset to root
+    await cs.stop()
+
+
+@pytest.mark.asyncio
+async def test_config_reloaded_is_inert_without_deck():
+    from gameshow.events import ConfigReloaded
+    bus = EventBus()
+    config = make_config([ButtonConfig(type="state", state="clear")])
+    cs = ControlSurface(bus, lambda: config, deck_factory=lambda: [])
+    await cs.start()                            # no deck -> inert
+    assert cs._deck is None
+    await cs._on_config_reloaded(ConfigReloaded(path="shows/x.yml"))  # must not raise
+
 
 @pytest.mark.asyncio
 async def test_start_opens_resets_brightness_and_renders():
