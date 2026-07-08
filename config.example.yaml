@@ -1,30 +1,16 @@
-# Network endpoints for every external system the controller talks to.
 service:
-  # The controller's own OSC server: the address/port it BINDS to and listens on
-  # for incoming ControlCommands (e.g. from a TouchOSC surface). 0.0.0.0 = all
-  # interfaces.
   osc_server_host: "0.0.0.0"
   osc_server_port: 21601
-  # Lighting/DMX console we SEND cue OSC messages to (see the `lighting:` block).
   dmx_osc_host: "localhost"
   dmx_osc_port: 21600
-  # OBS Studio WebSocket (obs-websocket v5). Leave obs_password "" if auth is off.
   obs_host: "localhost"
   obs_port: 4455
   obs_password: ""
-  # Where feedback OSC (timer/state/show-name readouts) is SENT, typically back to
-  # the TouchOSC surface. Leave touchosc_host "" to disable feedback entirely.
   touchosc_host: "127.0.0.1"
   touchosc_port: 9000
 
-# Buzzer players and the shared buzz-in timer.
 buzzers:
-  # Default countdown (seconds) once a player is locked in, used by state machines
-  # that run a `countdown` behavior. A scene may override this; null disables it.
   buzz_timeout_seconds: 5
-  # One entry per player/buzzer. `key` is the keyboard key that triggers that
-  # player's buzz; `enabled: false` keeps the player out of the game (bans,
-  # when_all_banned, etc. only count enabled players).
   players:
     - id: 1
       name: "Player 1"
@@ -233,7 +219,8 @@ show:
 # incorrect|allow_next|timed_lockout), countdown (action: display|toggle|pause|
 # resume|reset|cancel), scene_advance, scene_previous, scene_goto, scene_current,
 # state_display, lighting, sound, stop_sounds, obs_scene, obs_request, page,
-# config_reload (config: a show file under shows/; omit to reload the current one).
+# config_reload (config: a show file under shows/; omit to reload the current one),
+# show_browser (auto-lists every show in shows/ as loadable buttons).
 control_surface:
   enabled: true
   brightness: 60
@@ -412,9 +399,13 @@ control_surface:
                     label: "Mute Mic"
                     request_type: "SetInputMute"
                     request_data: { inputName: "Mic", inputMuted: true }
+            # Auto-lists every show in shows/ — new files appear with no config change.
+            browse_shows:
+              type: show_browser
+              label: "Shows"
             shows_folder:
               type: page
-              label: "Shows"
+              label: "Shows (fixed)"
               page:
                 buttons:
                   load_trivia:

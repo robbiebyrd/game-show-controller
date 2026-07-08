@@ -228,6 +228,7 @@ contains any symbols you use (plain Helvetica/Arial, for example, do not).
 | `obs_scene`      | `scene`                              | Switch OBS program scene (websocket) |
 | `obs_request`    | `request_type`, `request_data`       | Any OBS-WebSocket request, e.g. `SetInputMute` |
 | `config_reload`  | `config` (optional)                  | Hot-load a show config (see below) |
+| `show_browser`   | —                                    | Open a live, auto-built page listing every show in `shows/` (see below) |
 | `page`           | `page: { buttons: [...] }`           | Open a nested page (return button auto-added) |
 
 `countdown cancel` stops the auto-timeout but leaves the player locked in — the
@@ -265,10 +266,22 @@ show:
   scenes: [...]
 ```
 
+A **`show_browser`** button opens a page that is built on the fly from the
+`shows/` folder: one `config_reload` button per file, labelled by the show's
+`name` (falling back to the filename). If there are more shows than fit on one
+page, a **Next ▶** button chains to the next; the automatic return key (key 10)
+steps back. Drop a new `.yml` in `shows/` and it appears the next time the
+browser is opened — no config change needed.
+
 OSC:
 
 | Address | Arg | Action |
 |---------|-----|--------|
 | `/config/reload` | show file (optional) | Hot-load a show config; omit to reload the current file |
+| `/config/list` | — | Emit the `shows/` listing as feedback (see below) |
+| `/config/load` | index | Load the Nth show from the listing |
 
-Feedback emitted on reload: `/feedback/show/name`, `/feedback/show/description`.
+Feedback:
+- On reload: `/feedback/show/name`, `/feedback/show/description`.
+- On `/config/list`: `/feedback/shows/count` (total), then one
+  `/feedback/shows/item` per show with `[index, filename, name]`.
