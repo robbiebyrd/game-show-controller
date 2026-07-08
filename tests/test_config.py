@@ -3,7 +3,7 @@ import textwrap
 import yaml
 from gameshow.config import (
     parse_config, deep_merge, apply_scene_override,
-    AppConfig,
+    AppConfig, Behavior,
 )
 
 MINIMAL_YAML = textwrap.dedent("""\
@@ -126,13 +126,13 @@ def test_string_transition_parses_to_transition_config():
 def test_mapping_transition_parses_do_and_guard():
     tr = parse_config(load(MINIMAL_YAML)).state_machine.states["buzz_timeout"].then
     assert tr.to == "idle"
-    assert tr.do == ["ban_current", "clear_player"]
+    assert tr.do == [Behavior("ban_current"), Behavior("clear_player")]
     assert tr.when_all_banned == "idle"
 
 
 def test_behaviors_and_hold_parsed():
     sm = parse_config(load(MINIMAL_YAML)).state_machine
-    assert sm.states["locked"].behaviors == ["countdown"]
+    assert sm.states["locked"].behaviors == [Behavior("countdown")]
     assert sm.states["correct"].hold == 2.0
     assert sm.states["correct"].then.to == "idle"
 
@@ -140,7 +140,7 @@ def test_behaviors_and_hold_parsed():
 def test_global_transitions_parsed():
     clear = parse_config(load(MINIMAL_YAML)).state_machine.global_["clear"]
     assert clear.to == "idle"
-    assert clear.do == ["clear_bans", "clear_player"]
+    assert clear.do == [Behavior("clear_bans"), Behavior("clear_player")]
 
 
 def test_missing_state_machine_raises():
@@ -196,6 +196,51 @@ def test_unknown_do_behavior_raises():
     raw = load(MINIMAL_YAML)
     raw["state_machine"]["states"]["locked"]["transitions"]["incorrect"]["do"] = ["explode"]
     with pytest.raises(ValueError, match="explode"):
+        parse_config(raw)
+
+
+def test_behavior_string_and_map_parse():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["transitions"]["correct"] = {
+        "to": "correct", "do": ["ban_current", {"award": 100}],
+    }
+    cfg = parse_config(raw)
+    do = cfg.state_machine.states["locked"].transitions["correct"].do
+    assert do == [Behavior("ban_current", None), Behavior("award", 100)]
+
+
+def test_bare_string_behaviors_stay_backward_compatible():
+    # Existing string-only behavior lists still parse into Behavior objects.
+    cfg = parse_config(load(MINIMAL_YAML))
+    do = cfg.state_machine.states["locked"].transitions["incorrect"].do
+    assert do == [Behavior("ban_current", None)]
+
+
+def test_scoring_config_parses():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["scoring"] = {"default_award": 200, "default_deduct": 50}
+    cfg = parse_config(raw)
+    assert cfg.state_machine.scoring.default_award == 200
+    assert cfg.state_machine.scoring.default_deduct == 50
+
+
+def test_no_scoring_config_is_none():
+    cfg = parse_config(load(MINIMAL_YAML))
+    assert cfg.state_machine.scoring is None
+
+
+def test_reset_scores_on_enter_parses():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["reset_scores_on_enter"] = True
+    assert parse_config(raw).state_machine.reset_scores_on_enter is True
+
+
+def test_unknown_map_behavior_raises():
+    raw = load(MINIMAL_YAML)
+    raw["state_machine"]["states"]["locked"]["transitions"]["correct"] = {
+        "to": "correct", "do": [{"teleport": 1}],
+    }
+    with pytest.raises(ValueError, match="teleport"):
         parse_config(raw)
 
 

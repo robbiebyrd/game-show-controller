@@ -34,23 +34,56 @@ class BuzzerConfig:
 
 # Typed side-effect behaviors that config may attach to a state (as ``behaviors``)
 # or to a transition (as ``do``). The interpreter in state_machine.py implements them.
-STATE_BEHAVIORS = {"ban_current", "clear_bans", "clear_player", "countdown"}
+STATE_BEHAVIORS = {
+    "ban_current", "clear_bans", "clear_player", "countdown",
+    "award", "deduct", "reset_scores",
+}
+
+
+@dataclass
+class Behavior:
+    """A side-effect: a name plus an optional parameter (e.g. ``award: 100``)."""
+    name: str
+    param: object = None
+
+
+def _as_behavior(raw: object) -> Behavior:
+    if isinstance(raw, Behavior):
+        return raw
+    if isinstance(raw, str):
+        return Behavior(raw)
+    if isinstance(raw, dict) and len(raw) == 1:
+        (name, param), = raw.items()
+        return Behavior(name, param)
+    raise ValueError(f"invalid behavior {raw!r}; expected a name or a single-key mapping")
+
+
+@dataclass
+class ScoringConfig:
+    default_award: float = 0.0
+    default_deduct: float = 0.0
 
 
 @dataclass
 class TransitionConfig:
     to: str                                   # target state name
-    do: list[str] = field(default_factory=list)   # side-effect behaviors to run
-    when_all_banned: Optional[str] = None     # redirect + clear bans if all players banned
+    do: list = field(default_factory=list)    # side-effect behaviors (str | {name: param})
+    when_all_banned: Optional[str] = None      # redirect + clear bans if all players banned
+
+    def __post_init__(self) -> None:
+        self.do = [_as_behavior(b) for b in self.do]
 
 
 @dataclass
 class StateConfig:
     transitions: dict[str, TransitionConfig] = field(default_factory=dict)  # trigger -> transition
-    behaviors: list[str] = field(default_factory=list)   # entry side-effects
+    behaviors: list = field(default_factory=list)   # entry side-effects (str | {name: param})
     hold: Optional[float] = None              # auto-return delay (seconds)
     hold_from_arg: Optional[float] = None     # default hold when the trigger carries no duration
     then: Optional[TransitionConfig] = None   # where to go after ``hold``/``hold_from_arg``
+
+    def __post_init__(self) -> None:
+        self.behaviors = [_as_behavior(b) for b in self.behaviors]
 
 
 @dataclass
@@ -58,6 +91,8 @@ class StateMachineConfig:
     initial: str
     states: dict[str, StateConfig] = field(default_factory=dict)
     global_: dict[str, TransitionConfig] = field(default_factory=dict)  # triggers valid anywhere
+    scoring: Optional[ScoringConfig] = None
+    reset_scores_on_enter: bool = False  # clear scores when this machine becomes active
 
 
 @dataclass
@@ -257,7 +292,14 @@ def _parse_state_machine(raw: dict) -> StateMachineConfig:
         )
     global_ = {t: _parse_transition(v) for t, v in (raw.get("global") or {}).items()}
 
-    sm = StateMachineConfig(initial=raw["initial"], states=states, global_=global_)
+    scoring_raw = raw.get("scoring")
+    scoring = ScoringConfig(**{k: v for k, v in scoring_raw.items()
+                               if k in ScoringConfig.__dataclass_fields__}) if scoring_raw else None
+
+    sm = StateMachineConfig(
+        initial=raw["initial"], states=states, global_=global_,
+        scoring=scoring, reset_scores_on_enter=raw.get("reset_scores_on_enter", False),
+    )
     _validate_state_machine(sm)
     return sm
 
@@ -297,9 +339,9 @@ def _validate_state_machine(sm: StateMachineConfig) -> None:
                 f"{where}: when_all_banned target '{tr.when_all_banned}' is not a defined state"
             )
         for behavior in tr.do:
-            if behavior not in STATE_BEHAVIORS:
+            if behavior.name not in STATE_BEHAVIORS:
                 raise ValueError(
-                    f"{where}: unknown behavior '{behavior}'; "
+                    f"{where}: unknown behavior '{behavior.name}'; "
                     f"must be one of {sorted(STATE_BEHAVIORS)}"
                 )
 
@@ -307,9 +349,9 @@ def _validate_state_machine(sm: StateMachineConfig) -> None:
         check_transition(tr, f"global.{trigger}")
     for name, state in sm.states.items():
         for behavior in state.behaviors:
-            if behavior not in STATE_BEHAVIORS:
+            if behavior.name not in STATE_BEHAVIORS:
                 raise ValueError(
-                    f"state '{name}': unknown behavior '{behavior}'; "
+                    f"state '{name}': unknown behavior '{behavior.name}'; "
                     f"must be one of {sorted(STATE_BEHAVIORS)}"
                 )
         for trigger, tr in state.transitions.items():

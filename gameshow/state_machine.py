@@ -7,7 +7,7 @@ from gameshow.config import AppConfig
 from gameshow.config import TransitionConfig
 from gameshow.events import (
     BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
-    CountdownTick, CountdownEnded, SceneChanged
+    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged
 )
 
 # Countdown controls act on the live countdown rather than driving a transition.
@@ -83,6 +83,7 @@ class StateMachine:
         self._timer: Optional[asyncio.Task] = None
         self._countdown: Optional[Countdown] = None
         self._scene_key: Optional[tuple] = None  # last scene reset for; guards refreshes
+        self.scores: dict[int, float] = {}       # per-player, persists across scenes
 
     async def start(self) -> None:
         self._bus.subscribe(BuzzerPressed, self._on_buzzer_pressed)
@@ -101,7 +102,10 @@ class StateMachine:
         await self._stop_countdown(None)
         self._banned.clear()
         self.locked_player_id = None
-        self.state = self._config().state_machine.initial
+        sm = self._config().state_machine
+        if sm.reset_scores_on_enter:
+            await self._reset_scores()
+        self.state = sm.initial
         log.info("Scene → %s; state machine reset to %s", event.name, self.state)
 
     async def stop(self) -> None:
@@ -147,21 +151,47 @@ class StateMachine:
                 return p.name
         return str(player_id)
 
-    def _run_do(self, behaviors: list[str]) -> None:
-        """Apply a transition's side-effect behaviors, in order."""
-        for name in behaviors:
-            if name == "ban_current":
+    async def _run_do(self, behaviors: list) -> None:
+        """Apply a list of Behavior side-effects, in order."""
+        for b in behaviors:
+            if b.name == "ban_current":
                 if self.locked_player_id is not None:
                     self._banned.add(self.locked_player_id)
-            elif name == "clear_bans":
+            elif b.name == "clear_bans":
                 self._banned.clear()
-            elif name == "clear_player":
+            elif b.name == "clear_player":
                 self.locked_player_id = None
+            elif b.name == "award":
+                await self._adjust_score(self._amount(b, "default_award"))
+            elif b.name == "deduct":
+                await self._adjust_score(-self._amount(b, "default_deduct"))
+            elif b.name == "reset_scores":
+                await self._reset_scores()
             # "countdown" is an entry behavior; it has no meaning in a `do` list.
 
-    def _resolve_target(self, tr: TransitionConfig) -> str:
+    def _amount(self, behavior, default_attr: str) -> float:
+        """Resolve a scoring amount: the behavior's own param, else the machine default."""
+        if behavior.param is not None:
+            return float(behavior.param)
+        scoring = self._config().state_machine.scoring
+        return float(getattr(scoring, default_attr)) if scoring is not None else 0.0
+
+    async def _adjust_score(self, delta: float) -> None:
+        pid = self.locked_player_id
+        if pid is None or delta == 0:
+            return
+        self.scores[pid] = self.scores.get(pid, 0) + delta
+        await self._bus.publish(ScoreChanged(player_id=pid, score=self.scores[pid], delta=delta))
+
+    async def _reset_scores(self) -> None:
+        cleared = list(self.scores)
+        self.scores.clear()
+        for pid in cleared:
+            await self._bus.publish(ScoreChanged(player_id=pid, score=0, delta=0))
+
+    async def _resolve_target(self, tr: TransitionConfig) -> str:
         """Run the transition's behaviors and apply the all-banned guard."""
-        self._run_do(tr.do)
+        await self._run_do(tr.do)
         if tr.when_all_banned is not None and self._banned >= self._enabled_player_ids():
             self._banned.clear()
             return tr.when_all_banned
@@ -180,7 +210,7 @@ class StateMachine:
             log.info("Player %d (%s) buzzed in", player_id, self._player_name(player_id))
             await self._bus.publish(PlayerBuzzed(
                 player_id=player_id, player_name=self._player_name(player_id)))
-        await self._enter_state(self._resolve_target(tr), arg=arg)
+        await self._enter_state(await self._resolve_target(tr), arg=arg)
 
     async def _enter_state(self, name: str, arg: object = None) -> None:
         self._cancel_timer()
@@ -196,7 +226,9 @@ class StateMachine:
         await self._bus.publish(StateChanged(
             new_state=name, player_id=self.locked_player_id, duration=duration))
 
-        if "countdown" in cfg.behaviors:
+        # Entry behaviors: countdown starts the buzz timer; the rest run as side-effects.
+        await self._run_do([b for b in cfg.behaviors if b.name != "countdown"])
+        if any(b.name == "countdown" for b in cfg.behaviors):
             self._start_buzz_countdown()
 
         hold = duration if cfg.hold_from_arg is not None else cfg.hold
@@ -205,7 +237,7 @@ class StateMachine:
 
     async def _auto_return(self, delay: float, tr: TransitionConfig) -> None:
         await asyncio.sleep(delay)
-        await self._enter_state(self._resolve_target(tr))
+        await self._enter_state(await self._resolve_target(tr))
 
     async def _on_buzzer_pressed(self, event: BuzzerPressed) -> None:
         pid = event.player_id

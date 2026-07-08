@@ -27,6 +27,13 @@ class SceneChanged:
 
 
 @dataclass(frozen=True)
+class ScoreChanged:
+    player_id: int
+    score: float   # the player's new total
+    delta: float   # the change just applied
+
+
+@dataclass(frozen=True)
 class CountdownTick:
     remaining: float
     total: float

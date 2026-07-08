@@ -3,15 +3,25 @@ import pytest
 from gameshow.bus import EventBus
 from gameshow.events import (
     BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
-    CountdownTick, CountdownEnded, SceneChanged
+    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged
 )
 from gameshow import state_machine as sm_module
 from gameshow.state_machine import StateMachine
 from gameshow.config import (
     AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig,
     StateMachineConfig, StateConfig, TransitionConfig,
-    LightingConfig, AudioConfig, OBSConfig
+    LightingConfig, AudioConfig, OBSConfig, ScoringConfig, Behavior
 )
+
+
+def _enable_scoring(cfg, default_award=100, default_deduct=50):
+    """Attach scoring config + award/deduct behaviors to a make_config() machine."""
+    sm = cfg.state_machine
+    sm.scoring = ScoringConfig(default_award=default_award, default_deduct=default_deduct)
+    sm.states["locked"].transitions["correct"].do.append(Behavior("award"))
+    sm.states["locked"].transitions["incorrect"].do.append(Behavior("deduct"))
+    sm.global_["clear"].do.append(Behavior("reset_scores"))
+    return cfg
 
 
 def _t(to, do=None, when_all_banned=None):
@@ -477,6 +487,100 @@ async def test_host_transition_supersedes_countdown(fast_tick):
     assert any(e.reason == "superseded" for e in ended)
     assert sm.state == "correct"
 
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_award_increases_locked_player_score_and_emits_event():
+    bus = EventBus()
+    cfg = _enable_scoring(make_config(), default_award=100)
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+
+    events = []
+    async def capture(e): events.append(e)
+    bus.subscribe(ScoreChanged, capture)
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="correct"))
+
+    assert sm.scores[1] == 100
+    assert any(isinstance(e, ScoreChanged) and e.player_id == 1
+               and e.score == 100 and e.delta == 100 for e in events)
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_award_uses_explicit_param_over_default():
+    bus = EventBus()
+    cfg = _enable_scoring(make_config(), default_award=100)
+    # Override: correct awards 500, not the default 100.
+    cfg.state_machine.states["locked"].transitions["correct"].do = [Behavior("award", 500)]
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="correct"))
+    assert sm.scores[1] == 500
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_deduct_decreases_score():
+    bus = EventBus()
+    cfg = _enable_scoring(make_config(), default_deduct=50)
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="incorrect"))
+    assert sm.scores[1] == -50
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_reset_scores_clears_all():
+    bus = EventBus()
+    cfg = _enable_scoring(make_config())
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="correct"))
+    assert sm.scores[1] == 100
+    await bus.publish(ControlCommand(command="clear"))   # global clear includes reset_scores
+    assert sm.scores.get(1, 0) == 0
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_scores_persist_across_scene_change_by_default():
+    holder = {"cfg": _enable_scoring(make_config())}
+    bus = EventBus()
+    sm = StateMachine(bus, lambda: holder["cfg"])
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="correct"))
+    assert sm.scores[1] == 100
+
+    holder["cfg"] = _enable_scoring(make_config())   # new scene, default persistence
+    await bus.publish(SceneChanged(index=2, name="Round 2"))
+    assert sm.scores[1] == 100                        # carried over
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_reset_scores_on_enter_clears_on_scene_change():
+    holder = {"cfg": _enable_scoring(make_config())}
+    bus = EventBus()
+    sm = StateMachine(bus, lambda: holder["cfg"])
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="correct"))
+    assert sm.scores[1] == 100
+
+    fresh = _enable_scoring(make_config())
+    fresh.state_machine.reset_scores_on_enter = True
+    holder["cfg"] = fresh
+    await bus.publish(SceneChanged(index=2, name="Round 2"))
+    assert sm.scores.get(1, 0) == 0                   # reset on enter
     await sm.stop()
 
 
