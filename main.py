@@ -13,6 +13,7 @@ from gameshow.audio import AudioEngine
 from gameshow.obs_client import OBSClient
 from gameshow.control_surface import ControlSurface
 from gameshow.events import ControlCommand, SceneChanged, ConfigReloaded
+from gameshow.shows import SHOWS_DIR
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -21,7 +22,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 CONFIG_PATH = "config.yaml"
-SHOWS_DIR = "shows"  # bare show names in a reload command resolve here
 
 
 def resolve_show_path(arg: str) -> str:
