@@ -57,6 +57,11 @@ class CountdownEnded:
 
 
 @dataclass(frozen=True)
+class ConfigReloaded:
+    path: str  # the config file that was hot-loaded
+
+
+@dataclass(frozen=True)
 class ControlCommand:
     command: str
     args: tuple = field(default_factory=tuple)

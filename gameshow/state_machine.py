@@ -7,7 +7,8 @@ from gameshow.config import AppConfig
 from gameshow.config import TransitionConfig
 from gameshow.events import (
     BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
-    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged, AwardChanged, CounterChanged
+    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged, AwardChanged, CounterChanged,
+    ConfigReloaded,
 )
 
 # Countdown controls act on the live countdown rather than driving a transition.
@@ -92,6 +93,25 @@ class StateMachine:
         self._bus.subscribe(BuzzerPressed, self._on_buzzer_pressed)
         self._bus.subscribe(ControlCommand, self._on_control_command)
         self._bus.subscribe(SceneChanged, self._on_scene_changed)
+        self._bus.subscribe(ConfigReloaded, self._on_config_reloaded)
+
+    async def _reset_machine(self, reset_scores: bool) -> None:
+        """Return the machine to a clean state on the current config's initial.
+
+        Shared by scene changes and config reloads: cancels timers/countdowns,
+        clears bans/lock/award/counters, optionally clears scores, and lands on
+        the (possibly new) machine's ``initial`` state.
+        """
+        self._cancel_timer()
+        self._cancel_award_timer()
+        await self._stop_countdown(None)
+        self._banned.clear()
+        self.locked_player_id = None
+        self.pending_award = None
+        self.counters.clear()
+        if reset_scores:
+            await self._reset_scores()
+        self.state = self._config().state_machine.initial
 
     async def _on_scene_changed(self, event: SceneChanged) -> None:
         # Each scene may run a different machine, so reset flow to the new machine's
@@ -101,18 +121,15 @@ class StateMachine:
         if key == self._scene_key:
             return
         self._scene_key = key
-        self._cancel_timer()
-        self._cancel_award_timer()
-        await self._stop_countdown(None)
-        self._banned.clear()
-        self.locked_player_id = None
-        self.pending_award = None
-        self.counters.clear()
-        sm = self._config().state_machine
-        if sm.reset_scores_on_enter:
-            await self._reset_scores()
-        self.state = sm.initial
+        await self._reset_machine(self._config().state_machine.reset_scores_on_enter)
         log.info("Scene → %s; state machine reset to %s", event.name, self.state)
+
+    async def _on_config_reloaded(self, event: ConfigReloaded) -> None:
+        # A fresh config is a fresh show: wipe scores too and forget the last
+        # scene so the next SceneChanged reset is not deduplicated away.
+        self._scene_key = None
+        await self._reset_machine(reset_scores=True)
+        log.info("Config reloaded from %s; state machine reset to %s", event.path, self.state)
 
     async def stop(self) -> None:
         self._cancel_timer()

@@ -872,3 +872,32 @@ async def test_game_over_only_exits_via_clear():
     assert sm.state == "idle"
 
     await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_config_reloaded_resets_to_clean_slate():
+    from gameshow.events import ConfigReloaded
+    bus = EventBus()
+    config = _enable_scoring(make_config())
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    # Dirty every piece of per-show state.
+    sm.state = "locked"
+    sm.locked_player_id = 1
+    sm._banned.add(2)
+    sm.scores = {1: 300.0}
+    sm.counters = {"strikes": 2}
+    sm.pending_award = 500.0
+    sm._scene_key = (2, "Round 1")
+
+    await bus.publish(ConfigReloaded(path="shows/other.yml"))
+
+    assert sm.state == "idle"          # reset to the (new) machine's initial
+    assert sm.locked_player_id is None
+    assert sm._banned == set()
+    assert sm.scores == {}
+    assert sm.counters == {}
+    assert sm.pending_award is None
+    assert sm._scene_key is None
+    await sm.stop()
