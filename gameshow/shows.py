@@ -1,3 +1,4 @@
+"""Discovery of hot-loadable show configs in the ``shows/`` folder."""
 from __future__ import annotations
 import logging
 import os
@@ -14,6 +15,7 @@ _SUFFIXES = (".yml", ".yaml")
 
 @dataclass(frozen=True)
 class ShowEntry:
+    """A discovered show file and its display name."""
     filename: str  # name relative to the shows dir, e.g. "trivia.yml"
     name: str      # display name: the show's `name`, else the filename stem
 
@@ -21,7 +23,7 @@ class ShowEntry:
 def _read_show_name(path: str) -> Optional[str]:
     """Best-effort read of the ``show.name`` from a config file; None on failure."""
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         name = (raw.get("show") or {}).get("name")
         return str(name) if name else None
