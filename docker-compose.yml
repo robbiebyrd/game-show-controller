@@ -5,11 +5,10 @@ services:
       dockerfile: Dockerfile
     platform: linux/arm64
     restart: unless-stopped
-    ports:
-      - "9090:9090"   # web UI
-      - "9010:9010"   # olad RPC
-      # - "7770:7770/udp"   # OSC plugin (if enabled)
-      # - "5568:5568/udp"   # E1.31 / sACN (if enabled)
+    # Host networking gives olad's RPC server (127.0.0.1:9010) access on the Pi's
+    # own loopback, so SSH tunnelling from a dev machine works. Without this,
+    # docker-proxy connects to the container's eth0 IP, which olad never binds.
+    network_mode: host
     volumes:
       - ola-config:/etc/ola
     # ENTTEC Open DMX USB (FTDI 0403:6001) is claimed as a raw USB device via

@@ -33,7 +33,8 @@ apt-get install -y \
     libsdl2-ttf-dev \
     libasound2-dev \
     python3-xlib \
-    python3-evdev
+    python3-evdev \
+    libhidapi-libusb0
 
 # ── DMX USB access ───────────────────────────────────────────────────────────
 # The OLA container runs olad unprivileged (olad refuses to run as root), so the
@@ -65,7 +66,7 @@ python3 -m venv "${VENV_DIR}"
 
 log "Installing Python dependencies..."
 "${VENV_DIR}/bin/pip" install --upgrade pip -q
-"${VENV_DIR}/bin/pip" install -r "${INSTALL_DIR}/requirements.txt" -q
+"${VENV_DIR}/bin/pip" install "${INSTALL_DIR}" -q
 
 # ── systemd service ────────────────────────────────────────────────────────────
 log "Installing systemd service: ${SERVICE_NAME}..."
@@ -119,15 +120,15 @@ REMOTE=\$(git -C "\${INSTALL_DIR}" rev-parse "origin/\${BRANCH}")
 
 [[ "\${LOCAL}" == "\${REMOTE}" ]] && exit 0
 
-REQS_CHANGED=false
-if ! git -C "\${INSTALL_DIR}" diff --quiet "\${LOCAL}" "\${REMOTE}" -- requirements.txt; then
-    REQS_CHANGED=true
+DEPS_CHANGED=false
+if ! git -C "\${INSTALL_DIR}" diff --quiet "\${LOCAL}" "\${REMOTE}" -- pyproject.toml poetry.lock; then
+    DEPS_CHANGED=true
 fi
 
 git -C "\${INSTALL_DIR}" reset --hard "origin/\${BRANCH}"
 
-if [[ "\${REQS_CHANGED}" == "true" ]]; then
-    "\${VENV_DIR}/bin/pip" install -r "\${INSTALL_DIR}/requirements.txt" -q
+if [[ "\${DEPS_CHANGED}" == "true" ]]; then
+    "\${VENV_DIR}/bin/pip" install "\${INSTALL_DIR}" -q
 fi
 
 systemctl restart "\${SERVICE_NAME}"
