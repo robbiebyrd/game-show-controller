@@ -77,7 +77,7 @@ show:
 
 ## Phasing (each independently shippable + tested)
 
-**Phase A — Named machines + scene reference.** Add `state_machines` library; resolve `state_machine` (str | dict | extends) at parse/scene-resolve time into the one active machine. On `SceneChanged`, reset `StateMachine` to the new machine's `initial`. No mechanics yet. *This alone satisfies "each scene sets its own state machine."*
+**Phase A — Named machines + scene reference. ✅ DONE** (stories 006/007/008). Added `state_machines` library; `state_machine` resolves str | inline | `{extends}`; `StateMachine` resets to the new machine's `initial` on scene change (refresh-guarded); config files migrated to the `standard` named machine. *This alone satisfies "each scene sets its own state machine."*
 
 **Phase B — Parameterized behaviors + scoring (incl. variable per-question award).** Extend behavior grammar to `{name: param}`; add `scores` runtime (per player), `award`/`deduct`/`reset_scores`, machine `scoring`, and a `ScoreChanged` event + feedback.
 
