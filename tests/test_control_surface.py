@@ -815,3 +815,62 @@ async def test_stop_resets_and_closes():
     await cs.stop()
     assert deck.closed
     assert cs._deck is None
+
+
+# --------------------------------------------------------------------------
+# Show browser (dynamic shows/ listing)
+# --------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_show_browser_lists_shows(tmp_path, monkeypatch):
+    (tmp_path / "trivia.yml").write_text("show:\n  name: Trivia\n")
+    (tmp_path / "faceoff.yml").write_text("show:\n  name: Face Off\n")
+    monkeypatch.setattr("gameshow.shows.SHOWS_DIR", str(tmp_path))
+    button = ButtonConfig(type="show_browser", label="Shows")
+    bus, cs, deck = make_surface([button])
+    await cs.start()
+
+    await cs._on_key(deck, cs._key_of(button), True)
+    page = cs._stack[-1]
+    reloads = [b for b in page.buttons if b.type == "config_reload"]
+    assert {b.label for b in reloads} == {"Trivia", "Face Off"}
+    assert {b.config for b in reloads} == {"trivia.yml", "faceoff.yml"}
+    await cs.stop()
+
+
+@pytest.mark.asyncio
+async def test_show_browser_paginates_and_back_pops(tmp_path, monkeypatch):
+    for i in range(20):
+        (tmp_path / f"show{i:02d}.yml").write_text(f"show:\n  name: S{i}\n")
+    monkeypatch.setattr("gameshow.shows.SHOWS_DIR", str(tmp_path))
+    button = ButtonConfig(type="show_browser")
+    bus, cs, deck = make_surface([button])
+    await cs.start()
+
+    await cs._on_key(deck, cs._key_of(button), True)
+    page1 = cs._stack[-1]
+    next_btns = [b for b in page1.buttons if b.type == "page"]
+    assert len(next_btns) == 1                                  # a Next button
+    assert len([b for b in page1.buttons if b.type == "config_reload"]) == 13
+
+    await cs._on_key(deck, cs._key_of(next_btns[0]), True)      # follow Next
+    page2 = cs._stack[-1]
+    assert len([b for b in page2.buttons if b.type == "config_reload"]) == 7
+    assert not any(b.type == "page" for b in page2.buttons)     # last page, no Next
+
+    await cs._on_key(deck, RETURN_KEY, True)                    # Back → page 1
+    assert cs._stack[-1] is page1
+    await cs.stop()
+
+
+@pytest.mark.asyncio
+async def test_show_browser_empty_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr("gameshow.shows.SHOWS_DIR", str(tmp_path))
+    button = ButtonConfig(type="show_browser")
+    bus, cs, deck = make_surface([button])
+    await cs.start()
+
+    await cs._on_key(deck, cs._key_of(button), True)
+    page = cs._stack[-1]
+    assert [b for b in page.buttons if b.type == "config_reload"] == []
+    await cs.stop()

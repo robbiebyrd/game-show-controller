@@ -10,6 +10,7 @@ from PIL import ImageDraw, ImageFont
 from StreamDeck.ImageHelpers import PILHelper
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig, ButtonConfig, PageConfig
+from gameshow.shows import list_shows
 from gameshow.events import (
     ControlCommand, BuzzerPressed, StateChanged, SceneChanged,
     CountdownTick, CountdownEnded, ScoreChanged, CounterChanged, ConfigReloaded,
@@ -364,6 +365,10 @@ class ControlSurface:
             args = (button.config,) if button.config else ()
             await self._bus.publish(ControlCommand(command="config_reload", args=args))
             return
+        if t == "show_browser":
+            self._stack.append(self._build_shows_page())
+            await self._render()
+            return
         if t == "countdown":
             action = button.action or "display"
             if action == "toggle":
@@ -377,6 +382,32 @@ class ControlSurface:
             await self._bus.publish(ControlCommand(command=cmd, args=args))
             return
         # "scene_current" / "state_display" are display-only → no action on press
+
+    def _build_shows_page(self, entries=None) -> PageConfig:
+        """Build a (paginated) page listing every show in shows/ as a
+        config_reload button labelled by show name.
+
+        When shows overflow one deck page, a Next button chains to the following
+        page; the reserved return key (key 10) steps back through them.
+        """
+        entries = list_shows() if entries is None else entries
+        key_count = self._deck.key_count()
+        # Every sub-page reserves the return key; a page with a successor also
+        # reserves one slot for its Next button.
+        fits_one_page = len(entries) <= key_count - 1
+        page_size = (key_count - 1) if fits_one_page else (key_count - 2)
+        chunks = [entries[i:i + page_size]
+                  for i in range(0, len(entries), page_size)] or [[]]
+
+        # Built back-to-front so each page's Next can link to the one after it.
+        page: Optional[PageConfig] = None
+        for chunk in reversed(chunks):
+            buttons = [ButtonConfig(type="config_reload", label=e.name, config=e.filename)
+                       for e in chunk]
+            if page is not None:
+                buttons.append(ButtonConfig(type="page", label="Next ▶", page=page))
+            page = PageConfig(buttons=buttons)
+        return page
 
     # -------------------------------------------------------------- rendering
     async def _render(self) -> None:
