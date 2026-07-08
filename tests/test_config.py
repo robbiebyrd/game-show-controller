@@ -3,7 +3,7 @@ import textwrap
 import yaml
 from gameshow.config import (
     parse_config, deep_merge, apply_scene_override,
-    AppConfig, Behavior,
+    AppConfig, Behavior, ShowConfig,
 )
 
 MINIMAL_YAML = textwrap.dedent("""\
@@ -553,3 +553,26 @@ def test_control_surface_defaults_when_minimal():
     assert cfg.control_surface.enabled is True
     assert cfg.control_surface.brightness == 60
     assert cfg.control_surface.root.buttons == []
+
+
+def test_show_metadata_parsed_from_show_section():
+    raw = load(MINIMAL_YAML)
+    raw["show"] = {"name": "Jeopardy Night", "description": "A trivia showdown", "scenes": []}
+    cfg = parse_config(raw)
+    assert isinstance(cfg.show, ShowConfig)
+    assert cfg.show.name == "Jeopardy Night"
+    assert cfg.show.description == "A trivia showdown"
+
+
+def test_show_metadata_defaults_to_none_when_absent():
+    cfg = parse_config(load(MINIMAL_YAML))
+    assert cfg.show == ShowConfig(name=None, description=None)
+
+
+def test_button_config_field_parsed():
+    raw = load(MINIMAL_YAML)
+    raw["control_surface"] = {"root": {"buttons": {
+        "reload": {"type": "config_reload", "config": "jeopardy.yml"},
+    }}}
+    cfg = parse_config(raw)
+    assert cfg.control_surface.root.buttons[0].config == "jeopardy.yml"

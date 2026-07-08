@@ -151,6 +151,13 @@ class SceneConfig:
 
 
 @dataclass
+class ShowConfig:
+    """Top-level show metadata (from the ``show:`` section)."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+@dataclass
 class PressedStyle:
     """Appearance/value overrides applied while a button is held down.
 
@@ -203,6 +210,7 @@ class ButtonConfig:
     value: Optional[float] = None        # set_award: point value for the current question
     counter: Optional[str] = None        # counter_display: which counter to show
     action: Optional[str] = None         # countdown: display|toggle|pause|resume|reset|cancel
+    config: Optional[str] = None         # config_reload: yaml file to hot-load (under shows/)
     request_type: Optional[str] = None   # obs_request
     request_data: Optional[dict] = None  # obs_request payload
     page: Optional["PageConfig"] = None  # page/folder target
@@ -244,6 +252,7 @@ class AppConfig:
     obs: OBSConfig
     scenes: list[SceneConfig] = field(default_factory=list)
     control_surface: Optional[ControlSurfaceConfig] = None
+    show: ShowConfig = field(default_factory=ShowConfig)
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -495,8 +504,11 @@ def parse_config(raw: dict) -> AppConfig:
 
     obs = OBSConfig(states=raw.get("obs", {}).get("states", {}))
 
+    show_raw = raw.get("show", {}) or {}
+    show = ShowConfig(name=show_raw.get("name"), description=show_raw.get("description"))
+
     scenes = []
-    for s in raw.get("show", {}).get("scenes", []):
+    for s in show_raw.get("scenes", []):
         on_enter_raw = s.get("on_enter", {})
         on_enter = OnEnterConfig(
             audio_background=on_enter_raw.get("audio_background"),
@@ -513,7 +525,7 @@ def parse_config(raw: dict) -> AppConfig:
     return AppConfig(
         service=service, buzzers=buzzers, state_machine=state_machine,
         lighting=lighting, audio=audio, obs=obs, scenes=scenes,
-        control_surface=control_surface,
+        control_surface=control_surface, show=show,
     )
 
 
