@@ -217,11 +217,11 @@ async def _on_state_changed(self, event: StateChanged) -> None:
 
 ## Acceptance Criteria
 
-- [ ] `GameState` enum is gone; states are strings sourced from `config.yaml`.
-- [ ] Adding/renaming a state or rewiring a `trigger → state` in `config.yaml` (no code change) alters the flow.
-- [ ] Typed behaviors `ban_current`, `clear_bans`, `clear_player`, `countdown` and the `when_all_banned` guard reproduce current buzz/ban/timeout behavior exactly.
-- [ ] Invalid config (bad target, unknown behavior, missing `initial`) fails at startup with a clear error.
-- [ ] All existing tests pass (rewritten where they referenced `GameState`/flat config).
+- [x] `GameState` enum is gone; states are strings sourced from `config.yaml`.
+- [x] Adding/renaming a state or rewiring a `trigger → state` in `config.yaml` (no code change) alters the flow.
+- [x] Typed behaviors `ban_current`, `clear_bans`, `clear_player`, `countdown` and the `when_all_banned` guard reproduce current buzz/ban/timeout behavior exactly.
+- [x] Invalid config (bad target, unknown behavior, missing `initial`) fails at startup with a clear error.
+- [x] All existing tests pass (rewritten where they referenced `GameState`/flat config).
 
 ## Checklist (non-TDD cleanup)
 
