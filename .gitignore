@@ -27,3 +27,6 @@ build/
 .github/instructions/codacy.instructions.md
 .fa_token
 .env
+.codacy
+.vscode
+plans/archive
