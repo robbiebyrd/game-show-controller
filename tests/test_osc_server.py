@@ -185,3 +185,54 @@ async def test_config_reloaded_emits_show_feedback():
     sent = {c.args[0]: c.args[1] for c in mock_client.send_message.call_args_list}
     assert sent["/feedback/show/name"] == ["Jeopardy Night"]
     assert sent["/feedback/show/description"] == ["Trivia showdown"]
+
+
+@pytest.mark.asyncio
+async def test_config_list_emits_show_feedback(tmp_path, monkeypatch):
+    (tmp_path / "trivia.yml").write_text("show:\n  name: Trivia\n")
+    (tmp_path / "faceoff.yml").write_text("show:\n  name: Face Off\n")
+    monkeypatch.setattr("gameshow.shows.SHOWS_DIR", str(tmp_path))
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    mock_client = MagicMock()
+    server._feedback_client = mock_client
+
+    await server._dispatch("/config/list", [])
+
+    calls = mock_client.send_message.call_args_list
+    counts = [c for c in calls if c.args[0] == "/feedback/shows/count"]
+    items = [c.args[1] for c in calls if c.args[0] == "/feedback/shows/item"]
+    assert counts and counts[0].args[1] == [2]
+    # sorted by filename: faceoff.yml (0), trivia.yml (1)
+    assert items[0] == [0, "faceoff.yml", "Face Off"]
+    assert items[1] == [1, "trivia.yml", "Trivia"]
+
+
+@pytest.mark.asyncio
+async def test_config_load_by_index_publishes_reload(tmp_path, monkeypatch):
+    (tmp_path / "trivia.yml").write_text("show:\n  name: Trivia\n")
+    (tmp_path / "faceoff.yml").write_text("show:\n  name: Face Off\n")
+    monkeypatch.setattr("gameshow.shows.SHOWS_DIR", str(tmp_path))
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    received = []
+    async def capture(e): received.append(e)
+    bus.subscribe(ControlCommand, capture)
+
+    await server._dispatch("/config/load", [1])  # trivia.yml
+    assert received[0].command == "config_reload"
+    assert received[0].args == ("trivia.yml",)
+
+
+@pytest.mark.asyncio
+async def test_config_load_out_of_range_is_ignored(tmp_path, monkeypatch):
+    (tmp_path / "trivia.yml").write_text("show:\n  name: Trivia\n")
+    monkeypatch.setattr("gameshow.shows.SHOWS_DIR", str(tmp_path))
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    received = []
+    async def capture(e): received.append(e)
+    bus.subscribe(ControlCommand, capture)
+
+    await server._dispatch("/config/load", [99])
+    assert received == []

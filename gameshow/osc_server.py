@@ -7,6 +7,7 @@ from pythonosc.osc_server import AsyncIOOSCUDPServer
 from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
+from gameshow.shows import list_shows
 from gameshow.events import (
     ControlCommand, SceneChanged, StateChanged, PlayerBuzzed,
     ScoreChanged, AwardChanged, CounterChanged, ConfigReloaded
@@ -110,6 +111,14 @@ class OSCServer:
             await self._bus.publish(ControlCommand(command="config_reload", args=args))
             return
 
+        if address == "/config/list":
+            self._emit_show_list()
+            return
+
+        if address == "/config/load":
+            await self._load_show_by_index(args)
+            return
+
         if address == "/show/goto":
             arg = args[0] if args else None
             if isinstance(arg, int):
@@ -125,6 +134,28 @@ class OSCServer:
             await self._bus.publish(ControlCommand(command=cmd, args=(arg,) if arg is not None else ()))
             return
 
+    def _emit_show_list(self) -> None:
+        """Publish the shows/ listing as feedback so a surface can build a menu."""
+        entries = list_shows()
+        self._feedback("/feedback/shows/count", len(entries))
+        for index, entry in enumerate(entries):
+            self._feedback("/feedback/shows/item", index, entry.filename, entry.name)
+
+    async def _load_show_by_index(self, args: list[Any]) -> None:
+        """Load the Nth show from the shows/ listing (as shown by /config/list)."""
+        try:
+            index = int(args[0])
+        except (IndexError, TypeError, ValueError):
+            log.warning("IN OSC /config/load ignored: expected an integer index, got %s", args)
+            return
+        entries = list_shows()
+        if not 0 <= index < len(entries):
+            log.warning("IN OSC /config/load index %d out of range (0-%d)",
+                        index, len(entries) - 1)
+            return
+        await self._bus.publish(
+            ControlCommand(command="config_reload", args=(entries[index].filename,)))
+
     def _make_handler(self, address: str) -> Callable:
         def handler(addr: str, *args: Any) -> None:
             self._loop.create_task(self._dispatch(address, list(args)))
@@ -135,7 +166,8 @@ class OSCServer:
         cfg = self._config().service
         dispatcher = Dispatcher()
         for address in list(_SIMPLE_COMMANDS.keys()) + [
-            "/buzzer/timed_lockout", "/show/goto", "/config/reload",
+            "/buzzer/timed_lockout", "/show/goto",
+            "/config/reload", "/config/list", "/config/load",
             "/audio/background/play", "/audio/background/volume",
             "/audio/effect/play", "/audio/effect/volume",
         ]:
