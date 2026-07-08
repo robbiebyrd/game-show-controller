@@ -97,6 +97,75 @@ systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 systemctl restart "${SERVICE_NAME}"
 
+# ── GitHub auto-update (systemd timer, every 1 min) ───────────────────────────
+UPDATE_SCRIPT="/usr/local/bin/${SERVICE_NAME}-update"
+UPDATE_SERVICE="/etc/systemd/system/${SERVICE_NAME}-update.service"
+UPDATE_TIMER="/etc/systemd/system/${SERVICE_NAME}-update.timer"
+
+log "Installing auto-update script: ${UPDATE_SCRIPT}..."
+cat > "${UPDATE_SCRIPT}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_DIR="${INSTALL_DIR}"
+BRANCH="${BRANCH}"
+VENV_DIR="${VENV_DIR}"
+SERVICE_NAME="${SERVICE_NAME}"
+
+git -C "\${INSTALL_DIR}" fetch origin --quiet
+
+LOCAL=\$(git -C "\${INSTALL_DIR}" rev-parse HEAD)
+REMOTE=\$(git -C "\${INSTALL_DIR}" rev-parse "origin/\${BRANCH}")
+
+[[ "\${LOCAL}" == "\${REMOTE}" ]] && exit 0
+
+REQS_CHANGED=false
+if ! git -C "\${INSTALL_DIR}" diff --quiet "\${LOCAL}" "\${REMOTE}" -- requirements.txt; then
+    REQS_CHANGED=true
+fi
+
+git -C "\${INSTALL_DIR}" reset --hard "origin/\${BRANCH}"
+
+if [[ "\${REQS_CHANGED}" == "true" ]]; then
+    "\${VENV_DIR}/bin/pip" install -r "\${INSTALL_DIR}/requirements.txt" -q
+fi
+
+systemctl restart "\${SERVICE_NAME}"
+EOF
+chmod +x "${UPDATE_SCRIPT}"
+
+log "Installing auto-update systemd units..."
+cat > "${UPDATE_SERVICE}" <<EOF
+[Unit]
+Description=Game Show Controller – GitHub auto-update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${UPDATE_SCRIPT}
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${SERVICE_NAME}-update
+EOF
+
+cat > "${UPDATE_TIMER}" <<EOF
+[Unit]
+Description=Poll GitHub for Game Show Controller updates every minute
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+Unit=${SERVICE_NAME}-update.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now "${SERVICE_NAME}-update.timer"
+log "Auto-update timer active. Check with: systemctl list-timers ${SERVICE_NAME}-update.timer"
+
 # ── OLA DMX container ─────────────────────────────────────────────────────────
 # Runs olad (Open Lighting Architecture) in Docker to drive the ENTTEC Open DMX
 # USB. `restart: unless-stopped` in the compose file + the enabled docker service
@@ -122,3 +191,6 @@ log "OLA web UI:       http://\$(hostname -i | awk '{print \$1}'):9090"
 log "OLA logs:         docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
 log "Restart OLA:      docker compose -f ${INSTALL_DIR}/docker-compose.yml restart"
 log "Stop service:     sudo systemctl stop ${SERVICE_NAME}"
+log "Auto-update logs: journalctl -u ${SERVICE_NAME}-update -f"
+log "Update now:       sudo ${UPDATE_SCRIPT}"
+log "Timer status:     systemctl list-timers ${SERVICE_NAME}-update.timer"
