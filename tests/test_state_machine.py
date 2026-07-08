@@ -2,15 +2,20 @@ import asyncio
 import pytest
 from gameshow.bus import EventBus
 from gameshow.events import (
-    BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand, GameState,
+    BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
     CountdownTick, CountdownEnded
 )
 from gameshow import state_machine as sm_module
 from gameshow.state_machine import StateMachine
 from gameshow.config import (
     AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig,
-    StateMachineConfig, LightingConfig, AudioConfig, OBSConfig
+    StateMachineConfig, StateConfig, TransitionConfig,
+    LightingConfig, AudioConfig, OBSConfig
 )
+
+
+def _t(to, do=None, when_all_banned=None):
+    return TransitionConfig(to=to, do=do or [], when_all_banned=when_all_banned)
 
 
 def make_config(
@@ -29,18 +34,40 @@ def make_config(
             PlayerConfig(id=1, name="P1", key="1", enabled=True),
             PlayerConfig(id=2, name="P2", key="2", enabled=True),
         ]
+    states = {
+        "idle": StateConfig(transitions={"buzz": _t("locked")}),
+        "locked": StateConfig(
+            behaviors=["countdown"],
+            transitions={
+                "countdown_expire": _t("buzz_timeout"),
+                "correct": _t("correct"),
+                "incorrect": _t("incorrect", do=["ban_current"]),
+                "allow_next": _t("allow_next", do=["ban_current", "clear_player"],
+                                 when_all_banned="idle"),
+            },
+        ),
+        "correct": StateConfig(hold=correct_hold, then=_t(return_correct)),
+        "incorrect": StateConfig(hold=incorrect_hold, then=_t(return_incorrect),
+                                 transitions={"buzz": _t("locked")}),
+        "allow_next": StateConfig(transitions={"buzz": _t("locked")}),
+        "buzz_timeout": StateConfig(
+            hold=buzz_timeout_hold,
+            then=_t("allow_next", do=["ban_current", "clear_player"], when_all_banned="idle"),
+        ),
+        "timed_lockout": StateConfig(hold_from_arg=5.0, then=_t("idle")),
+        "round_start": StateConfig(hold=round_start_hold, then=_t(return_round_start)),
+        "game_over": StateConfig(),
+    }
+    global_ = {
+        "clear": _t("idle", do=["clear_bans", "clear_player"]),
+        "game_over": _t("game_over", do=["clear_bans", "clear_player"]),
+        "round_start": _t("round_start"),
+        "timed_lockout": _t("timed_lockout"),
+    }
     return AppConfig(
         service=ServiceConfig(),
         buzzers=BuzzerConfig(players=players, buzz_timeout_seconds=buzz_timeout_seconds),
-        state_machine=StateMachineConfig(
-            correct_hold_seconds=correct_hold,
-            incorrect_hold_seconds=incorrect_hold,
-            buzz_timeout_hold_seconds=buzz_timeout_hold,
-            round_start_hold_seconds=round_start_hold,
-            return_to_after_correct=return_correct,
-            return_to_after_incorrect=return_incorrect,
-            return_to_after_round_start=return_round_start,
-        ),
+        state_machine=StateMachineConfig(initial="idle", states=states, global_=global_),
         lighting=LightingConfig(),
         audio=AudioConfig(),
         obs=OBSConfig(),
@@ -63,8 +90,8 @@ async def test_idle_buzz_emits_player_buzzed_and_state_changed_locked():
     await bus.publish(BuzzerPressed(player_id=1))
 
     assert any(isinstance(e, PlayerBuzzed) and e.player_id == 1 for e in published)
-    assert any(isinstance(e, StateChanged) and e.new_state == GameState.LOCKED for e in published)
-    assert sm.state == GameState.LOCKED
+    assert any(isinstance(e, StateChanged) and e.new_state == "locked" for e in published)
+    assert sm.state == "locked"
 
     await sm.stop()
 
@@ -85,7 +112,7 @@ async def test_second_buzz_in_locked_is_ignored():
     await bus.publish(BuzzerPressed(player_id=2))
 
     assert len(published) == 0
-    assert sm.state == GameState.LOCKED
+    assert sm.state == "locked"
 
     await sm.stop()
 
@@ -99,10 +126,10 @@ async def test_correct_from_locked_transitions_and_auto_returns():
 
     await bus.publish(BuzzerPressed(player_id=1))
     await bus.publish(ControlCommand(command="correct"))
-    assert sm.state == GameState.CORRECT
+    assert sm.state == "correct"
 
     await asyncio.sleep(0.15)
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
 
     await sm.stop()
 
@@ -117,7 +144,7 @@ async def test_incorrect_from_locked_auto_returns():
     await bus.publish(BuzzerPressed(player_id=1))
     await bus.publish(ControlCommand(command="incorrect"))
     await asyncio.sleep(0.15)
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
 
     await sm.stop()
 
@@ -131,13 +158,13 @@ async def test_allow_next_from_locked_bans_player_and_allows_others():
 
     await bus.publish(BuzzerPressed(player_id=1))
     await bus.publish(ControlCommand(command="allow_next"))
-    assert sm.state == GameState.ALLOW_NEXT
+    assert sm.state == "allow_next"
 
     await bus.publish(BuzzerPressed(player_id=1))
-    assert sm.state == GameState.ALLOW_NEXT  # still banned
+    assert sm.state == "allow_next"  # still banned
 
     await bus.publish(BuzzerPressed(player_id=2))
-    assert sm.state == GameState.LOCKED
+    assert sm.state == "locked"
     assert sm.locked_player_id == 2
 
     await sm.stop()
@@ -155,7 +182,7 @@ async def test_allow_next_exhaustion_returns_to_idle():
     await bus.publish(BuzzerPressed(player_id=2))
     await bus.publish(ControlCommand(command="allow_next"))
 
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
 
     await sm.stop()
 
@@ -167,9 +194,9 @@ async def test_allow_next_outside_locked_is_ignored():
     sm = StateMachine(bus, lambda: config)
     await sm.start()
 
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
     await bus.publish(ControlCommand(command="allow_next"))
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
 
     await sm.stop()
 
@@ -182,9 +209,9 @@ async def test_clear_from_any_state_goes_to_idle():
     await sm.start()
 
     await bus.publish(BuzzerPressed(player_id=1))
-    assert sm.state == GameState.LOCKED
+    assert sm.state == "locked"
     await bus.publish(ControlCommand(command="clear"))
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
 
     await sm.stop()
 
@@ -199,7 +226,7 @@ async def test_buzz_timeout_fires_after_delay():
     await bus.publish(BuzzerPressed(player_id=1))
     await asyncio.sleep(0.2)
     # P1 timed out and is banned; P2 still available → ALLOW_NEXT
-    assert sm.state == GameState.ALLOW_NEXT
+    assert sm.state == "allow_next"
     assert 1 in sm._banned
 
     await sm.stop()
@@ -214,15 +241,15 @@ async def test_buzz_timeout_allows_other_players_to_buzz():
 
     await bus.publish(BuzzerPressed(player_id=1))
     await asyncio.sleep(0.2)
-    assert sm.state == GameState.ALLOW_NEXT
+    assert sm.state == "allow_next"
 
     # Timed-out player is banned
     await bus.publish(BuzzerPressed(player_id=1))
-    assert sm.state == GameState.ALLOW_NEXT
+    assert sm.state == "allow_next"
 
     # Other player can buzz in
     await bus.publish(BuzzerPressed(player_id=2))
-    assert sm.state == GameState.LOCKED
+    assert sm.state == "locked"
     assert sm.locked_player_id == 2
 
     await sm.stop()
@@ -239,7 +266,7 @@ async def test_buzz_timeout_all_players_exhausted_returns_to_idle():
     await bus.publish(BuzzerPressed(player_id=1))
     await asyncio.sleep(0.2)
     # Only one player, they timed out → all exhausted → IDLE with ban cleared
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
     assert len(sm._banned) == 0
 
     await sm.stop()
@@ -255,7 +282,7 @@ async def test_host_input_cancels_buzz_timeout():
     await bus.publish(BuzzerPressed(player_id=1))
     await asyncio.sleep(0.05)
     await bus.publish(ControlCommand(command="correct"))
-    assert sm.state == GameState.CORRECT  # not BUZZ_TIMEOUT
+    assert sm.state == "correct"  # not BUZZ_TIMEOUT
 
     await sm.stop()
 
@@ -269,13 +296,13 @@ async def test_any_transition_cancels_transient_timer():
 
     await bus.publish(BuzzerPressed(player_id=1))
     await bus.publish(ControlCommand(command="correct"))
-    assert sm.state == GameState.CORRECT
+    assert sm.state == "correct"
 
     await bus.publish(ControlCommand(command="clear"))
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
 
     await asyncio.sleep(0.1)
-    assert sm.state == GameState.IDLE  # no ghost timer
+    assert sm.state == "idle"  # no ghost timer
 
     await sm.stop()
 
@@ -288,9 +315,9 @@ async def test_timed_lockout_auto_returns_to_idle():
     await sm.start()
 
     await bus.publish(ControlCommand(command="timed_lockout", args=(0.05,)))
-    assert sm.state == GameState.TIMED_LOCKOUT
+    assert sm.state == "timed_lockout"
     await asyncio.sleep(0.15)
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
 
     await sm.stop()
 
@@ -339,7 +366,7 @@ async def test_countdown_expiry_ends_and_reaches_buzz_timeout(fast_tick):
 
     assert any(e.reason == "expired" for e in ended)
     # single-player config → all exhausted after timeout → IDLE
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
 
     await sm.stop()
 
@@ -361,7 +388,7 @@ async def test_countdown_pause_freezes_and_prevents_expiry(fast_tick):
 
     await asyncio.sleep(0.25)
     # Still locked (no expiry) and paused ticks report frozen remaining
-    assert sm.state == GameState.LOCKED
+    assert sm.state == "locked"
     assert ticks, "paused countdown should still emit ticks"
     assert all(t.paused for t in ticks)
     assert ticks[0].remaining == ticks[-1].remaining
@@ -380,10 +407,10 @@ async def test_countdown_resume_continues_to_expiry(fast_tick):
     await bus.publish(BuzzerPressed(player_id=1))
     await bus.publish(ControlCommand(command="countdown_pause"))
     await asyncio.sleep(0.15)
-    assert sm.state == GameState.LOCKED  # paused, no expiry
+    assert sm.state == "locked"  # paused, no expiry
     await bus.publish(ControlCommand(command="countdown_resume"))
     await asyncio.sleep(0.3)
-    assert sm.state == GameState.IDLE  # resumed → expired → exhausted
+    assert sm.state == "idle"  # resumed → expired → exhausted
 
     await sm.stop()
 
@@ -426,7 +453,7 @@ async def test_countdown_cancel_stops_timer_but_stays_locked(fast_tick):
     await asyncio.sleep(0.25)
 
     assert any(e.reason == "cancelled" for e in ended)
-    assert sm.state == GameState.LOCKED  # no auto-timeout after cancel
+    assert sm.state == "locked"  # no auto-timeout after cancel
     assert sm.locked_player_id == 1
 
     await sm.stop()
@@ -448,7 +475,7 @@ async def test_host_transition_supersedes_countdown(fast_tick):
     await bus.publish(ControlCommand(command="correct"))
 
     assert any(e.reason == "superseded" for e in ended)
-    assert sm.state == GameState.CORRECT
+    assert sm.state == "correct"
 
     await sm.stop()
 
@@ -461,12 +488,12 @@ async def test_game_over_only_exits_via_clear():
     await sm.start()
 
     await bus.publish(ControlCommand(command="game_over"))
-    assert sm.state == GameState.GAME_OVER
+    assert sm.state == "game_over"
 
     await bus.publish(BuzzerPressed(player_id=1))
-    assert sm.state == GameState.GAME_OVER  # buzz does nothing
+    assert sm.state == "game_over"  # buzz does nothing
 
     await bus.publish(ControlCommand(command="clear"))
-    assert sm.state == GameState.IDLE
+    assert sm.state == "idle"
 
     await sm.stop()

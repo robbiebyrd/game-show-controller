@@ -1,12 +1,13 @@
 ---
 id: 002-4a9d
 title: Drop GameState enum; StateChanged.new_state becomes a string
-status: pending
+status: in_progress
 priority: P1
 type: feature
 created: "2026-07-08T16:33:16.153Z"
-updated: "2026-07-08T16:33:31.367Z"
+updated: "2026-07-08T16:44:35.684Z"
 dependencies: ["001-72a8"]
+started_at: "2026-07-08T16:44:35.684Z"
 ---
 
 # Drop GameState enum; StateChanged.new_state becomes a string

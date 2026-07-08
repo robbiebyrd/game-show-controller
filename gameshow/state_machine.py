@@ -4,10 +4,14 @@ import logging
 from typing import Optional, Callable
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
+from gameshow.config import TransitionConfig
 from gameshow.events import (
-    BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand, GameState,
+    BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
     CountdownTick, CountdownEnded
 )
+
+# Countdown controls act on the live countdown rather than driving a transition.
+_COUNTDOWN_CONTROLS = {"countdown_pause", "countdown_resume", "countdown_reset", "countdown_cancel"}
 
 log = logging.getLogger(__name__)
 
@@ -60,26 +64,20 @@ class Countdown:
         await self._on_expire()
 
 
-_TRANSIENT_HOLD_MAP = {
-    GameState.CORRECT: lambda sm: sm._config().state_machine.correct_hold_seconds,
-    GameState.INCORRECT: lambda sm: sm._config().state_machine.incorrect_hold_seconds,
-    GameState.ROUND_START: lambda sm: sm._config().state_machine.round_start_hold_seconds,
-}
-
-_RETURN_TO_MAP = {
-    GameState.CORRECT: lambda sm: sm._config().state_machine.return_to_after_correct,
-    GameState.INCORRECT: lambda sm: sm._config().state_machine.return_to_after_incorrect,
-    GameState.ROUND_START: lambda sm: sm._config().state_machine.return_to_after_round_start,
-}
-
-_STATE_NAME_TO_ENUM = {s.name.lower(): s for s in GameState}
-
-
 class StateMachine:
+    """Interprets the config-defined transition table and typed behaviors.
+
+    A ``ControlCommand`` (or ``BuzzerPressed``, the ``buzz`` trigger) fires a
+    trigger; the current state's ``transitions`` (falling back to ``global``)
+    map it to a target state. Entry ``behaviors`` and per-transition ``do``
+    lists run the typed side-effects (``ban_current`` / ``clear_bans`` /
+    ``clear_player`` / ``countdown``). ``hold``/``then`` drives auto-return.
+    """
+
     def __init__(self, bus: EventBus, config: Callable[[], AppConfig]) -> None:
         self._bus = bus
         self._config = config
-        self.state = GameState.IDLE
+        self.state: str = config().state_machine.initial
         self.locked_player_id: Optional[int] = None
         self._banned: set[int] = set()
         self._timer: Optional[asyncio.Task] = None
@@ -112,7 +110,16 @@ class StateMachine:
     async def _on_countdown_expire(self) -> None:
         self._countdown = None
         await self._bus.publish(CountdownEnded(reason="expired"))
-        await self._enter_state(GameState.BUZZ_TIMEOUT, self.locked_player_id)
+        await self._fire("countdown_expire")
+
+    def _start_buzz_countdown(self) -> None:
+        timeout = self._config().buzzers.buzz_timeout_seconds
+        if timeout is None:
+            return
+        self._countdown = Countdown(
+            timeout, COUNTDOWN_TICK_SECONDS, self._emit_tick, self._on_countdown_expire
+        )
+        self._countdown.start()
 
     def _enabled_player_ids(self) -> set[int]:
         return {p.id for p in self._config().buzzers.players if p.enabled}
@@ -123,133 +130,93 @@ class StateMachine:
                 return p.name
         return str(player_id)
 
-    async def _enter_state(self, new_state: GameState, player_id: Optional[int] = None) -> None:
+    def _run_do(self, behaviors: list[str]) -> None:
+        """Apply a transition's side-effect behaviors, in order."""
+        for name in behaviors:
+            if name == "ban_current":
+                if self.locked_player_id is not None:
+                    self._banned.add(self.locked_player_id)
+            elif name == "clear_bans":
+                self._banned.clear()
+            elif name == "clear_player":
+                self.locked_player_id = None
+            # "countdown" is an entry behavior; it has no meaning in a `do` list.
+
+    def _resolve_target(self, tr: TransitionConfig) -> str:
+        """Run the transition's behaviors and apply the all-banned guard."""
+        self._run_do(tr.do)
+        if tr.when_all_banned is not None and self._banned >= self._enabled_player_ids():
+            self._banned.clear()
+            return tr.when_all_banned
+        return tr.to
+
+    async def _fire(self, trigger: str, arg: object = None,
+                    player_id: Optional[int] = None) -> None:
+        sm = self._config().state_machine
+        state = sm.states.get(self.state)
+        tr = (state.transitions.get(trigger) if state else None) or sm.global_.get(trigger)
+        if tr is None:
+            log.debug("Trigger %r not valid in state %s", trigger, self.state)
+            return
+        if player_id is not None:                # the `buzz` trigger carries a player
+            self.locked_player_id = player_id
+            log.info("Player %d (%s) buzzed in", player_id, self._player_name(player_id))
+            await self._bus.publish(PlayerBuzzed(
+                player_id=player_id, player_name=self._player_name(player_id)))
+        await self._enter_state(self._resolve_target(tr), arg=arg)
+
+    async def _enter_state(self, name: str, arg: object = None) -> None:
         self._cancel_timer()
         await self._stop_countdown("superseded")
-        log.info("State → %s%s", new_state.name, f" (player {player_id})" if player_id is not None else "")
-        self.state = new_state
+        cfg = self._config().state_machine.states[name]
+        log.info("State → %s%s", name,
+                 f" (player {self.locked_player_id})" if self.locked_player_id is not None else "")
+        self.state = name
 
-        await self._bus.publish(StateChanged(new_state=new_state, player_id=player_id))
+        duration = None
+        if cfg.hold_from_arg is not None:
+            duration = float(arg) if arg is not None else cfg.hold_from_arg
+        await self._bus.publish(StateChanged(
+            new_state=name, player_id=self.locked_player_id, duration=duration))
 
-        if new_state == GameState.BUZZ_TIMEOUT:
-            hold = self._config().state_machine.buzz_timeout_hold_seconds
-            self._timer = asyncio.create_task(self._buzz_timeout_return(player_id, hold))
-        elif new_state in _TRANSIENT_HOLD_MAP:
-            hold = _TRANSIENT_HOLD_MAP[new_state](self)
-            return_to = _RETURN_TO_MAP[new_state](self)
-            self._timer = asyncio.create_task(self._auto_return(hold, return_to))
+        if "countdown" in cfg.behaviors:
+            self._start_buzz_countdown()
 
-    async def _buzz_timeout_return(self, player_id: Optional[int], hold: float) -> None:
-        await asyncio.sleep(hold)
-        if player_id is not None:
-            self._banned.add(player_id)
-        self.locked_player_id = None
-        enabled = self._enabled_player_ids()
-        if self._banned >= enabled:
-            self._banned.clear()
-            await self._enter_state(GameState.IDLE)
-        else:
-            await self._enter_state(GameState.ALLOW_NEXT)
+        hold = duration if cfg.hold_from_arg is not None else cfg.hold
+        if hold is not None and cfg.then is not None:
+            self._timer = asyncio.create_task(self._auto_return(hold, cfg.then))
 
-    async def _auto_return(self, delay: float, return_to: str) -> None:
+    async def _auto_return(self, delay: float, tr: TransitionConfig) -> None:
         await asyncio.sleep(delay)
-        target = _STATE_NAME_TO_ENUM.get(return_to, GameState.IDLE)
-        await self._enter_state(target)
+        await self._enter_state(self._resolve_target(tr))
 
     async def _on_buzzer_pressed(self, event: BuzzerPressed) -> None:
         pid = event.player_id
-        enabled = self._enabled_player_ids()
-        if pid not in enabled:
+        if pid not in self._enabled_player_ids():
             log.debug("Buzzer press from disabled player %d ignored", pid)
             return
-
-        if self.state == GameState.IDLE and pid not in self._banned:
-            await self._lock_player(pid)
-        elif self.state in (GameState.ALLOW_NEXT, GameState.INCORRECT) and pid not in self._banned:
-            await self._lock_player(pid)
-
-    async def _lock_player(self, player_id: int) -> None:
-        self._cancel_timer()
-        await self._stop_countdown(None)
-        log.info("Player %d (%s) buzzed in", player_id, self._player_name(player_id))
-        self.locked_player_id = player_id
-        await self._bus.publish(PlayerBuzzed(
-            player_id=player_id, player_name=self._player_name(player_id)
-        ))
-
-        self.state = GameState.LOCKED
-        await self._bus.publish(StateChanged(new_state=GameState.LOCKED, player_id=player_id))
-
-        timeout = self._config().buzzers.buzz_timeout_seconds
-        if timeout is not None:
-            self._countdown = Countdown(
-                timeout, COUNTDOWN_TICK_SECONDS, self._emit_tick, self._on_countdown_expire
-            )
-            self._countdown.start()
+        if pid in self._banned:
+            return
+        state = self._config().state_machine.states.get(self.state)
+        if state is None or "buzz" not in state.transitions:
+            return
+        await self._fire("buzz", player_id=pid)
 
     async def _on_control_command(self, event: ControlCommand) -> None:
         cmd = event.command
+        if cmd in _COUNTDOWN_CONTROLS:
+            await self._handle_countdown_control(cmd)
+            return
+        arg = event.args[0] if event.args else None
+        await self._fire(cmd, arg=arg)
 
-        if cmd == "clear":
-            self._banned.clear()
-            self.locked_player_id = None
-            await self._enter_state(GameState.IDLE)
-            return
-
-        if cmd == "game_over":
-            self._banned.clear()
-            self.locked_player_id = None
-            await self._enter_state(GameState.GAME_OVER)
-            return
-
-        if cmd == "round_start":
-            await self._enter_state(GameState.ROUND_START)
-            return
-
-        if cmd == "timed_lockout":
-            duration = float(event.args[0]) if event.args else 5.0
-            self._cancel_timer()
-            self.state = GameState.TIMED_LOCKOUT
-            await self._bus.publish(StateChanged(new_state=GameState.TIMED_LOCKOUT, duration=duration))
-            self._timer = asyncio.create_task(self._auto_return(duration, "idle"))
-            return
-
-        if cmd == "countdown_pause":
-            if self._countdown:
-                self._countdown.pause()
-            return
-        if cmd == "countdown_resume":
-            if self._countdown:
-                self._countdown.resume()
-            return
-        if cmd == "countdown_reset":
-            if self._countdown:
-                self._countdown.reset()
-            return
+    async def _handle_countdown_control(self, cmd: str) -> None:
         if cmd == "countdown_cancel":
             await self._stop_countdown("cancelled")
-            return
-
-        if self.state == GameState.GAME_OVER:
-            log.debug("Command %r ignored in GAME_OVER", cmd)
-            return
-
-        if self.state != GameState.LOCKED:
-            log.debug("Command %r ignored outside LOCKED (state=%s)", cmd, self.state.name)
-            return
-
-        if cmd == "correct":
-            await self._enter_state(GameState.CORRECT, self.locked_player_id)
-        elif cmd == "incorrect":
-            self._banned.add(self.locked_player_id)
-            await self._enter_state(GameState.INCORRECT, self.locked_player_id)
-        elif cmd == "allow_next":
-            self._banned.add(self.locked_player_id)
-            enabled = self._enabled_player_ids()
-            if self._banned >= enabled:
-                self._banned.clear()
-                self.locked_player_id = None
-                await self._enter_state(GameState.IDLE)
-            else:
-                self.locked_player_id = None
-                await self._enter_state(GameState.ALLOW_NEXT)
+        elif self._countdown:
+            if cmd == "countdown_pause":
+                self._countdown.pause()
+            elif cmd == "countdown_resume":
+                self._countdown.resume()
+            elif cmd == "countdown_reset":
+                self._countdown.reset()

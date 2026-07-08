@@ -1,18 +1,5 @@
 from dataclasses import dataclass, field
-from enum import Enum, auto
 from typing import Optional
-
-
-class GameState(Enum):
-    IDLE = auto()
-    LOCKED = auto()
-    ALLOW_NEXT = auto()
-    CORRECT = auto()
-    INCORRECT = auto()
-    BUZZ_TIMEOUT = auto()
-    TIMED_LOCKOUT = auto()
-    ROUND_START = auto()
-    GAME_OVER = auto()
 
 
 @dataclass(frozen=True)
@@ -28,9 +15,9 @@ class PlayerBuzzed:
 
 @dataclass(frozen=True)
 class StateChanged:
-    new_state: GameState
+    new_state: str  # config state key, e.g. "locked"
     player_id: Optional[int] = None
-    duration: Optional[float] = None  # set for TIMED_LOCKOUT; carries duration seconds
+    duration: Optional[float] = None  # set when entering a hold_from_arg state (e.g. timed_lockout)
 
 
 @dataclass(frozen=True)
