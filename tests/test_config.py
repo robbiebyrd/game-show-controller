@@ -199,6 +199,57 @@ def test_unknown_do_behavior_raises():
         parse_config(raw)
 
 
+def _with_library(raw: dict) -> dict:
+    """Move the inline state_machine into a 'standard' library entry + reference it."""
+    raw = dict(raw)
+    raw["state_machines"] = {"standard": raw["state_machine"]}
+    raw["state_machine"] = "standard"
+    return raw
+
+
+def test_inline_state_machine_still_parses():
+    # The pre-library form (inline dict) must keep working.
+    cfg = parse_config(load(MINIMAL_YAML))
+    assert cfg.state_machine.initial == "idle"
+    assert "locked" in cfg.state_machine.states
+
+
+def test_state_machine_string_reference_resolves():
+    cfg = parse_config(_with_library(load(MINIMAL_YAML)))
+    assert cfg.state_machine.initial == "idle"
+    assert "buzz_timeout" in cfg.state_machine.states
+
+
+def test_state_machine_extends_merges_overrides():
+    raw = _with_library(load(MINIMAL_YAML))
+    raw["state_machine"] = {"extends": "standard",
+                            "states": {"correct": {"hold": 9.0, "then": "idle"}}}
+    cfg = parse_config(raw)
+    assert cfg.state_machine.states["correct"].hold == 9.0   # override applied
+    assert "buzz_timeout" in cfg.state_machine.states        # base states preserved
+
+
+def test_unknown_machine_reference_raises():
+    raw = _with_library(load(MINIMAL_YAML))
+    raw["state_machine"] = "nope"
+    with pytest.raises(ValueError, match="nope"):
+        parse_config(raw)
+
+
+def test_extends_unknown_base_raises():
+    raw = _with_library(load(MINIMAL_YAML))
+    raw["state_machine"] = {"extends": "ghost", "states": {}}
+    with pytest.raises(ValueError, match="ghost"):
+        parse_config(raw)
+
+
+def test_malformed_library_entry_raises():
+    raw = _with_library(load(MINIMAL_YAML))
+    raw["state_machines"]["broken"] = {"states": {"idle": {}}}  # missing 'initial'
+    with pytest.raises(ValueError, match="broken"):
+        parse_config(raw)
+
+
 def test_scene_lighting_states_deep_merge():
     base = load(MINIMAL_YAML)
     scene = {"lighting": {"states": {"locked": "/palette/CustomLocked/start"}}}

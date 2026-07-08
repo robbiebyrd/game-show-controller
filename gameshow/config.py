@@ -262,6 +262,29 @@ def _parse_state_machine(raw: dict) -> StateMachineConfig:
     return sm
 
 
+def _resolve_state_machine_raw(raw: dict) -> dict:
+    """Resolve the active ``state_machine`` value against the ``state_machines`` library.
+
+    The value may be a library name (str), an inline machine (dict), or
+    ``{extends: <name>, ...overrides}`` which deep-merges overrides onto a named machine.
+    """
+    library = raw.get("state_machines", {}) or {}
+    sm = raw["state_machine"]
+    if isinstance(sm, str):
+        if sm not in library:
+            raise ValueError(f"state_machine '{sm}' is not defined in state_machines")
+        return library[sm]
+    if isinstance(sm, dict) and "extends" in sm:
+        base = sm["extends"]
+        if base not in library:
+            raise ValueError(f"state_machine extends unknown machine '{base}'")
+        overrides = {k: v for k, v in sm.items() if k != "extends"}
+        return deep_merge(library[base], overrides)
+    if isinstance(sm, dict):
+        return sm  # inline machine
+    raise ValueError(f"invalid state_machine value {sm!r}; expected a name, mapping, or extends")
+
+
 def _validate_state_machine(sm: StateMachineConfig) -> None:
     if sm.initial not in sm.states:
         raise ValueError(f"initial state '{sm.initial}' is not defined in states")
@@ -369,7 +392,14 @@ def parse_config(raw: dict) -> AppConfig:
 
     if "state_machine" not in raw:
         raise ValueError("config is missing required 'state_machine' section")
-    state_machine = _parse_state_machine(raw["state_machine"])
+    # Every library machine is validated up front so malformed entries fail loudly,
+    # even ones only referenced by a scene that isn't active yet.
+    for name, machine_raw in (raw.get("state_machines") or {}).items():
+        try:
+            _parse_state_machine(machine_raw)
+        except (ValueError, KeyError) as exc:
+            raise ValueError(f"state_machines['{name}']: {exc}")
+    state_machine = _parse_state_machine(_resolve_state_machine_raw(raw))
 
     lighting = LightingConfig(states=raw.get("lighting", {}).get("states", {}))
 
