@@ -227,9 +227,48 @@ contains any symbols you use (plain Helvetica/Arial, for example, do not).
 | `stop_sounds`    | —                                    | Stop all effects and background audio |
 | `obs_scene`      | `scene`                              | Switch OBS program scene (websocket) |
 | `obs_request`    | `request_type`, `request_data`       | Any OBS-WebSocket request, e.g. `SetInputMute` |
+| `config_reload`  | `config` (optional)                  | Hot-load a show config (see below) |
 | `page`           | `page: { buttons: [...] }`           | Open a nested page (return button auto-added) |
 
 `countdown cancel` stops the auto-timeout but leaves the player locked in — the
 host then has unlimited time. `reset` restores the full duration.
 
 See the bottom of `config.yaml` for a complete worked example.
+
+### Hot-reloading a show config
+
+A whole new `.yml` config can be loaded at runtime without restarting the
+service — from a `config_reload` button or the OSC `/config/reload` command.
+
+- **`config`** (button) / the OSC argument names the file. A bare name resolves
+  under the top-level **`shows/`** folder (`trivia.yml` → `shows/trivia.yml`);
+  an absolute or already-existing path is used as-is.
+- **Omit it** to re-read the file that is currently loaded (picks up edits).
+- On success the service resets to a **clean slate**: the state machine returns
+  to the new config's `initial`, scores/counters/bans clear, no scene is
+  selected, and the surface re-renders from the new root page. The new show's
+  `name`/`description` are pushed to `/feedback/show/name` and
+  `/feedback/show/description`.
+- If the file is missing or malformed the reload is **logged and ignored** — the
+  running config is left untouched.
+
+Only *show content* reloads. Network settings — the OSC listen port, DMX target,
+and OBS connection — keep their startup values; changing those still needs a
+restart.
+
+Top-level show metadata lives in the `show:` section:
+
+```yaml
+show:
+  name: "Trivia Night"
+  description: "The house trivia showdown"
+  scenes: [...]
+```
+
+OSC:
+
+| Address | Arg | Action |
+|---------|-----|--------|
+| `/config/reload` | show file (optional) | Hot-load a show config; omit to reload the current file |
+
+Feedback emitted on reload: `/feedback/show/name`, `/feedback/show/description`.

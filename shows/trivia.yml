@@ -1,0 +1,87 @@
+# Sample show config for hot-reloading. Load it with the `config_reload`
+# button (config: "trivia.yml") or OSC `/config/reload trivia.yml`.
+#
+# A show file is a COMPLETE config — reloading replaces the whole active config.
+# Only show content is applied live; network settings (OSC listen port, DMX
+# target, OBS connection) keep the running service's startup values.
+
+show:
+  name: "Trivia Night"
+  description: "The house trivia showdown"
+  scenes:
+    - name: "Intro"
+      buzzers:
+        all_enabled: false
+    - name: "Round 1"
+
+service:
+  osc_server_host: "0.0.0.0"
+  osc_server_port: 21601
+  dmx_osc_host: "localhost"
+  dmx_osc_port: 21600
+  obs_host: "localhost"
+  obs_port: 4455
+  obs_password: ""
+  touchosc_host: ""
+  touchosc_port: 9000
+
+buzzers:
+  buzz_timeout_seconds: 10.0
+  players:
+    - { id: 1, name: "P1", key: "1", enabled: true }
+    - { id: 2, name: "P2", key: "2", enabled: true }
+    - { id: 3, name: "P3", key: "3", enabled: true }
+    - { id: 4, name: "P4", key: "4", enabled: true }
+
+state_machine:
+  initial: idle
+  global:
+    clear: { to: idle, do: [clear_bans, clear_player] }
+    game_over: { to: game_over, do: [clear_bans, clear_player] }
+    round_start: round_start
+  states:
+    idle:
+      transitions: { buzz: locked }
+    locked:
+      behaviors: [countdown]
+      transitions:
+        countdown_expire: buzz_timeout
+        correct: correct
+        incorrect: { to: incorrect, do: [ban_current] }
+        allow_next: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle }
+    correct: { hold: 2.0, then: idle }
+    incorrect: { hold: 2.0, then: idle, transitions: { buzz: locked } }
+    allow_next: { transitions: { buzz: locked } }
+    buzz_timeout: { hold: 3.0, then: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle } }
+    round_start: { hold: 2.0, then: idle }
+    game_over: {}
+
+lighting:
+  states:
+    idle: "/palette/Idle/activate"
+    locked: "/palette/Locked/activate"
+
+audio:
+  default_background_volume: 0.7
+  default_effect_volume: 1.0
+  states: {}
+
+obs:
+  states:
+    idle: "Idle"
+
+control_surface:
+  enabled: true
+  brightness: 60
+  root:
+    buttons:
+      button_0: { type: reset_buzzer, label: "Reset", key: 0, color: "#552222" }
+      button_1: { type: buzz, label: "P1", player_id: 1, key: 1 }
+      button_2: { type: buzz, label: "P2", player_id: 2, key: 2 }
+      button_3: { type: buzz, label: "P3", player_id: 3, key: 3 }
+      button_4: { type: buzz, label: "P4", player_id: 4, key: 4 }
+      button_5: { type: state, label: "Correct", state: correct, key: 5, color: "#224422" }
+      button_6: { type: state, label: "Wrong", state: incorrect, key: 6, color: "#442222" }
+      button_9: { type: state_display, label: "State", key: 9 }
+      button_11: { type: scene_current, label: "Scene", key: 11 }
+      button_14: { type: config_reload, label: "Reload", key: 14 }
