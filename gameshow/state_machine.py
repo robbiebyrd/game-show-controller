@@ -7,7 +7,7 @@ from gameshow.config import AppConfig
 from gameshow.config import TransitionConfig
 from gameshow.events import (
     BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
-    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged
+    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged, AwardChanged
 )
 
 # Countdown controls act on the live countdown rather than driving a transition.
@@ -84,6 +84,8 @@ class StateMachine:
         self._countdown: Optional[Countdown] = None
         self._scene_key: Optional[tuple] = None  # last scene reset for; guards refreshes
         self.scores: dict[int, float] = {}       # per-player, persists across scenes
+        self.pending_award: Optional[float] = None  # host override for the current question
+        self._award_timer: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
         self._bus.subscribe(BuzzerPressed, self._on_buzzer_pressed)
@@ -99,9 +101,11 @@ class StateMachine:
             return
         self._scene_key = key
         self._cancel_timer()
+        self._cancel_award_timer()
         await self._stop_countdown(None)
         self._banned.clear()
         self.locked_player_id = None
+        self.pending_award = None
         sm = self._config().state_machine
         if sm.reset_scores_on_enter:
             await self._reset_scores()
@@ -110,12 +114,18 @@ class StateMachine:
 
     async def stop(self) -> None:
         self._cancel_timer()
+        self._cancel_award_timer()
         await self._stop_countdown(None)
 
     def _cancel_timer(self) -> None:
         if self._timer and not self._timer.done():
             self._timer.cancel()
         self._timer = None
+
+    def _cancel_award_timer(self) -> None:
+        if self._award_timer and not self._award_timer.done():
+            self._award_timer.cancel()
+        self._award_timer = None
 
     async def _stop_countdown(self, reason: Optional[str]) -> None:
         """Stop the active countdown, optionally announcing why it ended."""
@@ -162,19 +172,37 @@ class StateMachine:
             elif b.name == "clear_player":
                 self.locked_player_id = None
             elif b.name == "award":
-                await self._adjust_score(self._amount(b, "default_award"))
+                await self._do_award(b)
             elif b.name == "deduct":
                 await self._adjust_score(-self._amount(b, "default_deduct"))
             elif b.name == "reset_scores":
                 await self._reset_scores()
-            # "countdown" is an entry behavior; it has no meaning in a `do` list.
+            # "countdown"/"await_award" are entry behaviors; no meaning in a `do` list.
 
     def _amount(self, behavior, default_attr: str) -> float:
         """Resolve a scoring amount: the behavior's own param, else the machine default."""
         if behavior.param is not None:
             return float(behavior.param)
+        return self._machine_default(default_attr)
+
+    def _machine_default(self, attr: str) -> float:
         scoring = self._config().state_machine.scoring
-        return float(getattr(scoring, default_attr)) if scoring is not None else 0.0
+        return float(getattr(scoring, attr)) if scoring is not None else 0.0
+
+    async def _do_award(self, behavior) -> None:
+        """Award points: an explicit behavior param wins, then a host override, else default."""
+        if behavior.param is not None:
+            amount = float(behavior.param)
+        elif self.pending_award is not None:
+            amount = self.pending_award
+        else:
+            amount = self._machine_default("default_award")
+        await self._adjust_score(amount)
+        # Question resolved: close any pending override window.
+        self._cancel_award_timer()
+        if self.pending_award is not None:
+            self.pending_award = None
+            await self._bus.publish(AwardChanged(value=None))
 
     async def _adjust_score(self, delta: float) -> None:
         pid = self.locked_player_id
@@ -226,14 +254,33 @@ class StateMachine:
         await self._bus.publish(StateChanged(
             new_state=name, player_id=self.locked_player_id, duration=duration))
 
-        # Entry behaviors: countdown starts the buzz timer; the rest run as side-effects.
-        await self._run_do([b for b in cfg.behaviors if b.name != "countdown"])
-        if any(b.name == "countdown" for b in cfg.behaviors):
+        # Entry behaviors: countdown/await_award arm timers; the rest run as side-effects.
+        entry_names = {b.name for b in cfg.behaviors}
+        await self._run_do([b for b in cfg.behaviors
+                            if b.name not in ("countdown", "await_award")])
+        if "countdown" in entry_names:
             self._start_buzz_countdown()
+        if "await_award" in entry_names:
+            self._arm_award_window()
 
         hold = duration if cfg.hold_from_arg is not None else cfg.hold
         if hold is not None and cfg.then is not None:
             self._timer = asyncio.create_task(self._auto_return(hold, cfg.then))
+
+    def _arm_award_window(self) -> None:
+        """Open a per-question override window; commit the default if it times out."""
+        self._cancel_award_timer()
+        self.pending_award = None
+        scoring = self._config().state_machine.scoring
+        timeout = scoring.award_override_timeout if scoring is not None else None
+        if timeout is not None:
+            self._award_timer = asyncio.create_task(self._award_timeout(timeout))
+
+    async def _award_timeout(self, delay: float) -> None:
+        await asyncio.sleep(delay)
+        # No override arrived: commit the default so it shows on the display.
+        self.pending_award = self._machine_default("default_award")
+        await self._bus.publish(AwardChanged(value=self.pending_award))
 
     async def _auto_return(self, delay: float, tr: TransitionConfig) -> None:
         await asyncio.sleep(delay)
@@ -256,8 +303,19 @@ class StateMachine:
         if cmd in _COUNTDOWN_CONTROLS:
             await self._handle_countdown_control(cmd)
             return
+        if cmd == "set_award":
+            await self._set_award(event.args[0] if event.args else None)
+            return
         arg = event.args[0] if event.args else None
         await self._fire(cmd, arg=arg)
+
+    async def _set_award(self, value: object) -> None:
+        """Host override of the current question's point value; cancels the timeout."""
+        if value is None:
+            return
+        self._cancel_award_timer()
+        self.pending_award = float(value)
+        await self._bus.publish(AwardChanged(value=self.pending_award))
 
     async def _handle_countdown_control(self, cmd: str) -> None:
         if cmd == "countdown_cancel":

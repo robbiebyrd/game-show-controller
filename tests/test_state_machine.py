@@ -3,7 +3,7 @@ import pytest
 from gameshow.bus import EventBus
 from gameshow.events import (
     BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
-    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged
+    CountdownTick, CountdownEnded, SceneChanged, ScoreChanged, AwardChanged
 )
 from gameshow import state_machine as sm_module
 from gameshow.state_machine import StateMachine
@@ -581,6 +581,86 @@ async def test_reset_scores_on_enter_clears_on_scene_change():
     holder["cfg"] = fresh
     await bus.publish(SceneChanged(index=2, name="Round 2"))
     assert sm.scores.get(1, 0) == 0                   # reset on enter
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_set_award_overrides_default():
+    bus = EventBus()
+    cfg = _enable_scoring(make_config(), default_award=100)
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    await bus.publish(ControlCommand(command="set_award", args=(500,)))
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="correct"))
+    assert sm.scores[1] == 500
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_award_falls_back_to_default_without_override():
+    bus = EventBus()
+    cfg = _enable_scoring(make_config(), default_award=100)
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="correct"))
+    assert sm.scores[1] == 100
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_pending_award_clears_after_use():
+    bus = EventBus()
+    cfg = _enable_scoring(make_config(), default_award=100)
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    await bus.publish(ControlCommand(command="set_award", args=(500,)))
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="correct"))
+    assert sm.scores[1] == 500
+    await asyncio.sleep(0.1)   # let CORRECT auto-return to idle
+    assert sm.state == "idle"
+    # Next question: no override → default is used (pending was cleared).
+    await bus.publish(BuzzerPressed(player_id=1))
+    await bus.publish(ControlCommand(command="correct"))
+    assert sm.scores[1] == 600
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_set_award_emits_award_changed():
+    bus = EventBus()
+    cfg = _enable_scoring(make_config())
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    events = []
+    async def capture(e): events.append(e)
+    bus.subscribe(AwardChanged, capture)
+    await bus.publish(ControlCommand(command="set_award", args=(300,)))
+    assert any(isinstance(e, AwardChanged) and e.value == 300 for e in events)
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_award_override_timeout_commits_default(monkeypatch):
+    bus = EventBus()
+    cfg = _enable_scoring(make_config(), default_award=100)
+    cfg.state_machine.scoring.award_override_timeout = 0.05
+    # 'locked' becomes the "question live" state that opens the override window.
+    cfg.state_machine.states["locked"].behaviors.append(Behavior("await_award"))
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+
+    events = []
+    async def capture(e): events.append(e)
+    bus.subscribe(AwardChanged, capture)
+
+    await bus.publish(BuzzerPressed(player_id=1))   # enters locked → arms window
+    await asyncio.sleep(0.15)                        # window expires → commit default
+    assert any(isinstance(e, AwardChanged) and e.value == 100 for e in events)
+    await bus.publish(ControlCommand(command="correct"))
+    assert sm.scores[1] == 100
     await sm.stop()
 
 

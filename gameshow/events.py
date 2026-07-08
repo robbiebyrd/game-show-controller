@@ -34,6 +34,11 @@ class ScoreChanged:
 
 
 @dataclass(frozen=True)
+class AwardChanged:
+    value: Optional[float]  # the point value that will be awarded for the current question
+
+
+@dataclass(frozen=True)
 class CountdownTick:
     remaining: float
     total: float

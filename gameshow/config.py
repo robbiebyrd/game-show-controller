@@ -36,7 +36,7 @@ class BuzzerConfig:
 # or to a transition (as ``do``). The interpreter in state_machine.py implements them.
 STATE_BEHAVIORS = {
     "ban_current", "clear_bans", "clear_player", "countdown",
-    "award", "deduct", "reset_scores",
+    "award", "deduct", "reset_scores", "await_award",
 }
 
 
@@ -62,6 +62,7 @@ def _as_behavior(raw: object) -> Behavior:
 class ScoringConfig:
     default_award: float = 0.0
     default_deduct: float = 0.0
+    award_override_timeout: Optional[float] = None  # seconds a `await_award` window stays open
 
 
 @dataclass
