@@ -12,7 +12,7 @@ from gameshow.dmx_client import DMXClient
 from gameshow.audio import AudioEngine
 from gameshow.obs_client import OBSClient
 from gameshow.control_surface import ControlSurface
-from gameshow.events import ControlCommand, SceneChanged
+from gameshow.events import ControlCommand, SceneChanged, ConfigReloaded
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -21,6 +21,15 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 CONFIG_PATH = "config.yaml"
+SHOWS_DIR = "shows"  # bare show names in a reload command resolve here
+
+
+def resolve_show_path(arg: str) -> str:
+    """Resolve a reload target: an absolute or already-existing path is used
+    as-is; a bare name is looked up under ``shows/``."""
+    if os.path.isabs(arg) or os.path.exists(arg):
+        return arg
+    return os.path.join(SHOWS_DIR, arg)
 
 
 async def main() -> None:
@@ -42,7 +51,8 @@ async def main() -> None:
     # Wire on_enter actions when a scene activates.
     # DMXClient handles "dmx_cue"; OBSClient handles "obs_scene_set".
     async def on_scene_changed(event: SceneChanged) -> None:
-        scene = next((s for s in base_config.scenes if s.name == event.name), None)
+        scene = next((s for s in scene_manager.current_config.scenes
+                      if s.name == event.name), None)
         if not scene or not scene.on_enter:
             return
         oe = scene.on_enter
@@ -70,6 +80,11 @@ async def main() -> None:
                 index=scene_manager.current_index,
                 name=scene_manager.current_scene_name or "",
             ))
+        elif event.command == "config_reload":
+            target = str(event.args[0]) if event.args else scene_manager.config_path
+            path = resolve_show_path(target)
+            if scene_manager.reload(path):
+                await bus.publish(ConfigReloaded(path=path))
 
     bus.subscribe(ControlCommand, on_control)
 
