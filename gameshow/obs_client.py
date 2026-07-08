@@ -27,7 +27,7 @@ class OBSClient:
     async def _on_state_changed(self, event: StateChanged) -> None:
         if not self._connected:
             return
-        scene_name = self._config().obs.states.get(event.new_state.name.lower())
+        scene_name = self._config().obs.states.get(event.new_state)
         if not scene_name:
             return
         try:

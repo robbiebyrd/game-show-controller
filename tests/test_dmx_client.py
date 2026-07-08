@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig, StateMachineConfig, LightingConfig, AudioConfig, OBSConfig
-from gameshow.events import StateChanged, PlayerBuzzed, GameState
+from gameshow.events import StateChanged, PlayerBuzzed
 from gameshow.dmx_client import DMXClient
 
 
@@ -10,7 +10,7 @@ def make_config(lighting_states=None):
     return AppConfig(
         service=ServiceConfig(dmx_osc_host="localhost", dmx_osc_port=21600),
         buzzers=BuzzerConfig(players=[PlayerConfig(id=1, name="P1", key="1")]),
-        state_machine=StateMachineConfig(),
+        state_machine=StateMachineConfig(initial="idle"),
         lighting=LightingConfig(states=lighting_states or {
             "idle": "/palette/Idle/activate",
             "locked": "/palette/Locked/activate",
@@ -30,7 +30,7 @@ async def test_state_changed_sends_configured_osc():
         mock_client = MagicMock()
         mock_cls.return_value = mock_client
         client = DMXClient(bus, lambda: config)
-        await bus.publish(StateChanged(new_state=GameState.LOCKED))
+        await bus.publish(StateChanged(new_state="locked"))
         mock_client.send_message.assert_called_once_with("/palette/Locked/activate", [])
 
 
@@ -54,5 +54,5 @@ async def test_state_with_no_configured_cue_sends_nothing():
         mock_client = MagicMock()
         mock_cls.return_value = mock_client
         client = DMXClient(bus, lambda: config)
-        await bus.publish(StateChanged(new_state=GameState.CORRECT))
+        await bus.publish(StateChanged(new_state="correct"))
         mock_client.send_message.assert_not_called()

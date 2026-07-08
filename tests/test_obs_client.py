@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig, ServiceConfig, BuzzerConfig, StateMachineConfig, LightingConfig, AudioConfig, OBSConfig
-from gameshow.events import StateChanged, GameState, ControlCommand
+from gameshow.events import StateChanged, ControlCommand
 from gameshow.obs_client import OBSClient
 
 
@@ -10,7 +10,7 @@ def make_config(obs_states=None):
     return AppConfig(
         service=ServiceConfig(obs_host="localhost", obs_port=4455, obs_password=""),
         buzzers=BuzzerConfig(players=[]),
-        state_machine=StateMachineConfig(),
+        state_machine=StateMachineConfig(initial="idle"),
         lighting=LightingConfig(),
         audio=AudioConfig(),
         obs=OBSConfig(states=obs_states or {
@@ -33,7 +33,7 @@ async def test_state_changed_calls_obs_switch():
         client = OBSClient(bus, lambda: config)
         client._ws = mock_ws
         client._connected = True
-        await bus.publish(StateChanged(new_state=GameState.LOCKED))
+        await bus.publish(StateChanged(new_state="locked"))
         mock_ws.call.assert_called_once()
         args = mock_ws.call.call_args
         assert "Buzz_Locked" in str(args)
@@ -49,7 +49,7 @@ async def test_state_with_no_obs_mapping_sends_nothing():
         client = OBSClient(bus, lambda: config)
         client._ws = mock_ws
         client._connected = True
-        await bus.publish(StateChanged(new_state=GameState.CORRECT))
+        await bus.publish(StateChanged(new_state="correct"))
         mock_ws.call.assert_not_called()
 
 
@@ -91,5 +91,5 @@ async def test_obs_not_connected_does_not_raise():
     with patch("gameshow.obs_client.simpleobsws.WebSocketClient"):
         client = OBSClient(bus, lambda: config)
         client._connected = False
-        await bus.publish(StateChanged(new_state=GameState.LOCKED))
+        await bus.publish(StateChanged(new_state="locked"))
         # no exception

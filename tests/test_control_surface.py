@@ -11,7 +11,7 @@ from gameshow.config import (
 )
 from gameshow.events import (
     ControlCommand, BuzzerPressed, StateChanged, SceneChanged,
-    CountdownTick, CountdownEnded, GameState,
+    CountdownTick, CountdownEnded,
 )
 from gameshow.control_surface import ControlSurface, RETURN_KEY
 
@@ -69,7 +69,7 @@ def make_config(root_buttons=None, label_align="bottom", label_wrap=False,
     return AppConfig(
         service=ServiceConfig(),
         buzzers=BuzzerConfig(players=[]),
-        state_machine=StateMachineConfig(),
+        state_machine=StateMachineConfig(initial="idle"),
         lighting=LightingConfig(),
         audio=AudioConfig(),
         obs=OBSConfig(),
@@ -268,7 +268,7 @@ async def test_deck_backend_error_is_inert():
     await cs.start()  # must not raise
     assert cs._deck is None
     # events must not raise either
-    await bus.publish(StateChanged(new_state=GameState.LOCKED))
+    await bus.publish(StateChanged(new_state="locked"))
     await cs.stop()
 
 
@@ -296,7 +296,7 @@ async def test_no_deck_is_inert():
     # events must not raise
     await bus.publish(CountdownTick(remaining=3.0, total=5.0))
     await bus.publish(SceneChanged(index=1, name="Intro"))
-    await bus.publish(StateChanged(new_state=GameState.LOCKED))
+    await bus.publish(StateChanged(new_state="locked"))
     await cs.stop()
 
 
@@ -354,7 +354,7 @@ async def test_state_changed_updates_state_display_key():
     await cs.start()
     key = cs._key_of(btn)
     calls = deck.image_calls[key]
-    await bus.publish(StateChanged(new_state=GameState.LOCKED))
+    await bus.publish(StateChanged(new_state="locked"))
     assert deck.image_calls[key] == calls + 1
     await cs.stop()
 

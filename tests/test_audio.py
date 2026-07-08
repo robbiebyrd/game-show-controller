@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch, call
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig, ServiceConfig, BuzzerConfig, StateMachineConfig, LightingConfig, AudioConfig, AudioStateEntry, OBSConfig
-from gameshow.events import StateChanged, PlayerBuzzed, GameState, ControlCommand
+from gameshow.events import StateChanged, PlayerBuzzed, ControlCommand
 from gameshow.audio import AudioEngine
 
 
@@ -10,7 +10,7 @@ def make_config(audio_states=None):
     return AppConfig(
         service=ServiceConfig(),
         buzzers=BuzzerConfig(players=[]),
-        state_machine=StateMachineConfig(),
+        state_machine=StateMachineConfig(initial="idle"),
         lighting=LightingConfig(),
         audio=AudioConfig(
             default_background_volume=0.7,
@@ -49,7 +49,7 @@ async def test_state_changed_correct_plays_effect():
         mock_pygame.mixer.Channel.return_value = mock_ch
         mock_pygame.mixer.Sound.return_value = MagicMock()
         engine = AudioEngine(bus, lambda: config)
-        await bus.publish(StateChanged(new_state=GameState.CORRECT))
+        await bus.publish(StateChanged(new_state="correct"))
         mock_pygame.mixer.Sound.assert_called_with("sounds/correct.mp3")
 
 
@@ -63,7 +63,7 @@ async def test_background_stops_before_new_track():
         mock_pygame.mixer.Channel.side_effect = [mock_bg_ch, mock_fx_ch]
         mock_pygame.mixer.Sound.return_value = MagicMock()
         engine = AudioEngine(bus, lambda: config)
-        await bus.publish(StateChanged(new_state=GameState.ROUND_START))
+        await bus.publish(StateChanged(new_state="round_start"))
         mock_bg_ch.stop.assert_called_once()
         mock_bg_ch.play.assert_called_once()
 

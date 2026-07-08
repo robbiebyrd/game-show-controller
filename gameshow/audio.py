@@ -58,7 +58,7 @@ class AudioEngine:
             self._play_background(entry.background)
 
     async def _on_state_changed(self, event: StateChanged) -> None:
-        self._handle_audio_state(event.new_state.name.lower())
+        self._handle_audio_state(event.new_state)
 
     async def _on_player_buzzed(self, event: PlayerBuzzed) -> None:
         self._handle_audio_state(f"player_{event.player_id}_buzz")

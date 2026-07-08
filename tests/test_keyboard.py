@@ -8,7 +8,7 @@ from gameshow.keyboard import KeyboardListener
 def make_config(players):
     return AppConfig(
         service=ServiceConfig(), buzzers=BuzzerConfig(players=players),
-        state_machine=StateMachineConfig(), lighting=LightingConfig(),
+        state_machine=StateMachineConfig(initial="idle"), lighting=LightingConfig(),
         audio=AudioConfig(), obs=OBSConfig(), scenes=[],
     )
 

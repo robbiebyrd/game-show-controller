@@ -80,7 +80,7 @@ state_machine:
 
 1. **Missing `state_machine.states`** → raise a clear startup `ValueError`. No hidden Python default; config is the single source of truth.
 2. **No backward compat** → flat `return_to_after_*` / `*_hold_seconds` fields and `VALID_RETURN_TARGETS` are removed outright; `config.yaml` and tests are migrated to the new schema.
-3. **`osc_server` player-reset feedback** → reset player display whenever `event.player_id is None` (decoupled from specific state names).
+3. **`osc_server` player-reset feedback** → REVISED during implementation. The `player_id is None` idea would change UX: `correct`/`incorrect` carry the locked player's id, so they would stop clearing the on-screen player label (and an existing test encodes clear-on-result). Behavior is therefore preserved via a `_PLAYER_RESET_STATES = {"correct","incorrect","idle"}` string set. Duration feedback IS decoupled: it now fires whenever `event.duration is not None`.
 
 ## Steps
 

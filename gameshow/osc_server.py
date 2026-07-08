@@ -7,7 +7,12 @@ from pythonosc.osc_server import AsyncIOOSCUDPServer
 from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
-from gameshow.events import ControlCommand, SceneChanged, StateChanged, PlayerBuzzed, GameState
+from gameshow.events import ControlCommand, SceneChanged, StateChanged, PlayerBuzzed
+
+# States after which the on-screen player label is cleared (the round's result
+# is in, so nobody is "buzzed in" anymore). These are conventional state names;
+# renaming them in config simply means the label won't auto-clear on them.
+_PLAYER_RESET_STATES = {"correct", "incorrect", "idle"}
 
 log = logging.getLogger(__name__)
 
@@ -56,10 +61,10 @@ class OSCServer:
         self._bus.subscribe(SceneChanged, self._on_scene_changed)
 
     async def _on_state_changed(self, event: StateChanged) -> None:
-        self._feedback("/feedback/state", event.new_state.name.lower())
-        if event.new_state == GameState.TIMED_LOCKOUT and event.duration is not None:
+        self._feedback("/feedback/state", event.new_state)
+        if event.duration is not None:
             self._feedback("/feedback/timed_lockout/duration", event.duration)
-        if event.new_state in (GameState.CORRECT, GameState.INCORRECT, GameState.IDLE):
+        if event.new_state in _PLAYER_RESET_STATES:
             self._feedback("/feedback/player", "None")
 
     async def _on_player_buzzed(self, event: PlayerBuzzed) -> None:

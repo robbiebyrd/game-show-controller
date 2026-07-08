@@ -609,5 +609,5 @@ class ControlSurface:
         self._refresh_type("scene_current")
 
     async def _on_state(self, event: StateChanged) -> None:
-        self._last_state = event.new_state.name.lower()
+        self._last_state = event.new_state
         self._refresh_type("state_display")
