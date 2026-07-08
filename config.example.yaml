@@ -29,14 +29,53 @@ buzzers:
       key: "4"
       enabled: false
 
+# The game flow is a fully data-driven state machine. `initial` is the starting
+# state; `states` defines every state and its transitions; `global` lists
+# triggers that work from any state.
+#
+# A trigger fires when a matching ControlCommand (or the `buzz` trigger, from a
+# buzzer press) arrives. Its value is either a target-state name, or a mapping:
+#   { to: <state>, do: [<behavior>...], when_all_banned: <state> }
+# Behaviors (run in order): ban_current | clear_bans | clear_player | countdown.
+#   - ban_current  : ban the currently locked-in player
+#   - clear_bans   : lift all bans
+#   - clear_player : forget the locked-in player
+#   - countdown    : (entry behavior) start the buzz-timeout countdown
+# `when_all_banned` redirects (and clears bans) once every enabled player is
+# banned. `hold`/`then` auto-advance after N seconds; `hold_from_arg` takes the
+# hold from the command argument (e.g. timed_lockout duration).
+#
+# NOTE: the transition-table key is `transitions`, NOT `on` — YAML would coerce
+# an unquoted `on:` key to the boolean true.
 state_machine:
-  return_to_after_correct: idle
-  return_to_after_incorrect: idle
-  return_to_after_round_start: idle
-  correct_hold_seconds: 2.0
-  incorrect_hold_seconds: 2.0
-  buzz_timeout_hold_seconds: 0.5
-  round_start_hold_seconds: 2.0
+  initial: idle
+  global:
+    clear:         { to: idle,      do: [clear_bans, clear_player] }
+    game_over:     { to: game_over, do: [clear_bans, clear_player] }
+    round_start:   round_start
+    timed_lockout: timed_lockout          # duration taken from the command argument
+  states:
+    idle:
+      transitions: { buzz: locked }       # a buzzer press locks that player
+    locked:
+      behaviors: [countdown]              # start the buzz-timeout countdown on entry
+      transitions:
+        countdown_expire: buzz_timeout    # fired when the countdown runs out
+        correct: correct
+        incorrect: { to: incorrect, do: [ban_current] }
+        allow_next:
+          to: allow_next
+          do: [ban_current, clear_player]
+          when_all_banned: idle           # everyone banned → clear bans and reset
+    correct:       { hold: 2.0, then: idle }
+    incorrect:     { hold: 2.0, then: idle, transitions: { buzz: locked } }
+    allow_next:    { transitions: { buzz: locked } }
+    buzz_timeout:
+      hold: 0.5
+      then: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle }
+    timed_lockout: { hold_from_arg: 5.0, then: idle }
+    round_start:   { hold: 2.0, then: idle }
+    game_over:     {}
 
 lighting:
   states:
@@ -112,8 +151,10 @@ show:
       on_enter:
         audio_background: "music/Game Level Up 1.mp3"
         obs_scene: "Round1_Board"
-      state_machine:
-        return_to_after_incorrect: allow_next
+      state_machine:                    # scene overrides deep-merge into the base
+        states:
+          incorrect:
+            then: allow_next            # this round: a wrong answer opens the buzzers
       buzzers:
         buzz_timeout_seconds: 8.0
 
