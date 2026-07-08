@@ -183,6 +183,7 @@ class ButtonConfig:
     scene: Optional[str] = None          # obs scene name
     target: Optional[object] = None      # scene_goto: name (str) or index (int)
     duration: Optional[float] = None     # timed_lockout / countdown
+    value: Optional[float] = None        # set_award: point value for the current question
     action: Optional[str] = None         # countdown: display|toggle|pause|resume|reset|cancel
     request_type: Optional[str] = None   # obs_request
     request_data: Optional[dict] = None  # obs_request payload

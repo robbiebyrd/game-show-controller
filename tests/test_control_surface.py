@@ -11,7 +11,7 @@ from gameshow.config import (
 )
 from gameshow.events import (
     ControlCommand, BuzzerPressed, StateChanged, SceneChanged,
-    CountdownTick, CountdownEnded,
+    CountdownTick, CountdownEnded, ScoreChanged,
 )
 from gameshow.control_surface import ControlSurface, RETURN_KEY
 
@@ -169,6 +169,7 @@ def test_layout_overflow_drops_extra_buttons():
     (ButtonConfig(type="countdown", action="pause"), ("countdown_pause", ())),
     (ButtonConfig(type="countdown", action="reset"), ("countdown_reset", ())),
     (ButtonConfig(type="countdown", action="cancel"), ("countdown_cancel", ())),
+    (ButtonConfig(type="set_award", value=200), ("set_award", (200,))),
 ])
 async def test_dispatch_publishes_control_command(button, expected):
     bus, cs, deck = make_surface([button])
@@ -182,6 +183,17 @@ async def test_dispatch_publishes_control_command(button, expected):
     await cs._on_key(deck, 0, True)
     cmd, args = expected
     assert any(e.command == cmd and e.args == args for e in published)
+
+
+@pytest.mark.asyncio
+async def test_score_display_reflects_score_changes():
+    button = ButtonConfig(type="score_display", name="scores")
+    bus, cs, deck = make_surface([button])
+    assert cs._dynamic_value(button) is not None          # renders even with no scores
+    await cs._on_score(ScoreChanged(player_id=1, score=300, delta=300))
+    await cs._on_score(ScoreChanged(player_id=2, score=150, delta=150))
+    text = cs._dynamic_value(button)
+    assert "300" in text and "150" in text
 
 
 @pytest.mark.asyncio

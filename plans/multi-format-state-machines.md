@@ -79,7 +79,7 @@ show:
 
 **Phase A — Named machines + scene reference. ✅ DONE** (stories 006/007/008). Added `state_machines` library; `state_machine` resolves str | inline | `{extends}`; `StateMachine` resets to the new machine's `initial` on scene change (refresh-guarded); config files migrated to the `standard` named machine. *This alone satisfies "each scene sets its own state machine."*
 
-**Phase B — Parameterized behaviors + scoring (incl. variable per-question award).** Extend behavior grammar to `{name: param}`; add `scores` runtime (per player), `award`/`deduct`/`reset_scores`, machine `scoring`, and a `ScoreChanged` event + feedback.
+**Phase B — Parameterized behaviors + scoring (incl. variable per-question award). ✅ DONE** (stories 009/010/011). Behavior grammar accepts `{name: param}`; per-player `scores`; `award`/`deduct`/`reset_scores`; machine `scoring`; `ScoreChanged`/`AwardChanged` events; `set_award` override + `await_award` window; control-surface `set_award`/`score_display` + OSC feedback.
 
 *Variable per-question award (resolved decision #2):* the host may override the point value for the current question from the control surface.
 ```yaml
