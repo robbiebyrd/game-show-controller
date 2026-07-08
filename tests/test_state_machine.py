@@ -727,6 +727,87 @@ async def test_counters_reset_on_scene_change():
     await sm.stop()
 
 
+def _machine_open():
+    return StateMachineConfig(
+        initial="idle",
+        states={
+            "idle": StateConfig(transitions={"buzz": _t("locked")}),
+            "locked": StateConfig(transitions={
+                "buzz": _t("locked"), "correct": _t("correct"), "incorrect": _t("incorrect")}),
+            "correct": StateConfig(hold=0.05, then=_t("idle")),
+            "incorrect": StateConfig(hold=0.05, then=_t("idle")),
+            "game_over": StateConfig(),
+        },
+        global_={"clear": _t("idle", do=["clear_player"]),
+                 "game_over": _t("game_over", do=["clear_player"])},
+    )
+
+
+def _machine_after_incorrect():
+    return StateMachineConfig(
+        initial="idle",
+        states={
+            "idle": StateConfig(transitions={"buzz": _t("locked")}),
+            "locked": StateConfig(transitions={
+                "correct": _t("correct"),
+                "incorrect": _t("incorrect", do=["ban_current"])}),
+            "correct": StateConfig(hold=0.05, then=_t("idle")),
+            "incorrect": StateConfig(
+                hold=0.05, then=_t("allow_next", do=["clear_player"], when_all_banned="idle")),
+            "allow_next": StateConfig(transitions={"buzz": _t("locked")}),
+            "game_over": StateConfig(),
+        },
+        global_={"clear": _t("idle", do=["clear_bans", "clear_player"]),
+                 "game_over": _t("game_over", do=["clear_bans", "clear_player"])},
+    )
+
+
+@pytest.mark.asyncio
+async def test_buzz_open_relocks_to_any_presser():
+    cfg = make_config()
+    cfg.state_machine = _machine_open()
+    bus = EventBus()
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    assert sm.state == "locked" and sm.locked_player_id == 1
+    await bus.publish(BuzzerPressed(player_id=2))   # any player, any time → re-locks
+    assert sm.state == "locked" and sm.locked_player_id == 2
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_buzz_timeout_blocks_second_buzz_while_locked():
+    cfg = make_config()   # the standard machine is the after-timeout mode
+    bus = EventBus()
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    assert sm.locked_player_id == 1
+    await bus.publish(BuzzerPressed(player_id=2))   # blocked while locked
+    assert sm.state == "locked" and sm.locked_player_id == 1
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_buzz_after_incorrect_opens_only_after_incorrect():
+    cfg = make_config()
+    cfg.state_machine = _machine_after_incorrect()
+    bus = EventBus()
+    sm = StateMachine(bus, lambda: cfg)
+    await sm.start()
+    await bus.publish(BuzzerPressed(player_id=1))
+    assert sm.locked_player_id == 1
+    await bus.publish(BuzzerPressed(player_id=2))   # blocked until Incorrect
+    assert sm.locked_player_id == 1
+    await bus.publish(ControlCommand(command="incorrect"))
+    await asyncio.sleep(0.1)                          # incorrect hold → allow_next
+    assert sm.state == "allow_next"
+    await bus.publish(BuzzerPressed(player_id=2))     # now P2 may buzz
+    assert sm.state == "locked" and sm.locked_player_id == 2
+    await sm.stop()
+
+
 @pytest.mark.asyncio
 async def test_scene_change_resets_to_new_machine_initial():
     holder = {"cfg": make_config()}

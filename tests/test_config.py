@@ -244,6 +244,16 @@ def test_unknown_map_behavior_raises():
         parse_config(raw)
 
 
+def test_shipped_config_defines_buzz_in_mode_machines():
+    import yaml as _yaml
+    for path in ("config.yaml", "config.example.yaml"):
+        with open(path) as f:
+            raw = _yaml.safe_load(f)
+        machines = raw.get("state_machines", {})
+        assert {"buzz_open", "buzz_timeout", "buzz_after_incorrect"} <= set(machines), path
+        parse_config(raw)   # resolves + validates the active machine and library
+
+
 def test_counters_config_parses():
     raw = load(MINIMAL_YAML)
     raw["state_machine"]["counters"] = {"strikes": {"max": 3, "initial": 0}}

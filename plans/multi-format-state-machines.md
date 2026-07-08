@@ -94,7 +94,11 @@ scoring:
 
 **Phase C — Counters + guards. ✅ DONE** (story 012). Machine `counters`; `increment`/`reset` behaviors; `when_counter_at` transition guard (redirect + reset at threshold); `CounterChanged` event; counters reset per scene; `counter_display` key + OSC feedback.
 
-**Phase D — Turn / control.** Machine `turn`; `next_turn`/`set_turn`; restrict triggers to current-turn player where configured; `TurnChanged` event.
+**Phase D — Buzz-in mode presets (REPLACES the turn/control idea). ✅ DONE** (story 013). Clarified with Robbie: there is NO turn-pointer system. A "Player" is a single scoring/control entity (may represent multiple humans), so teams are not needed. Buzzer/player control is entirely the per-scene state machine (Phase A). The variation is three buzz-in modes, each a named machine a scene picks:
+- `buzz_open` — any player can buzz at any time (a new buzz re-locks to the presser; no bans/timeout).
+- `buzz_timeout` — a second player may buzz only after the first times out (the current `standard` machine).
+- `buzz_after_incorrect` — a second player may buzz only after Incorrect is pressed (`incorrect → allow_next`).
+Ship these three in the config library, documented, with behavior tests.
 
 ## Resolved Decisions
 

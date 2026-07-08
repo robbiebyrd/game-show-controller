@@ -31,10 +31,17 @@ buzzers:
 
 # The active machine is chosen by name from the `state_machines` library below;
 # a scene may reference a different one. Swap this to change the default flow.
-state_machine: standard
+#
+# Three ready-made buzz-in modes decide when a SECOND player may buzz in:
+#   buzz_open            — any player can buzz at any time (a new buzz re-locks)
+#   buzz_timeout         — others may buzz only after the first player times out
+#   buzz_after_incorrect — others may buzz only after Incorrect is pressed
+# A "Player" is a single scoring/control entity (it may stand for several people).
+state_machine: buzz_timeout
 
 state_machines:
-  standard:
+  # --- buzz_timeout: a locked player holds the buzzers until their timer runs out ---
+  buzz_timeout:
     initial: idle
     # Triggers valid from any state (globals win over a state's own transitions).
     global:
@@ -64,6 +71,42 @@ state_machines:
       timed_lockout: { hold_from_arg: 5.0, then: idle }
       round_start:   { hold: 2.0, then: idle }
       game_over:     {}
+
+  # --- buzz_open: buzzers are always live; a new buzz re-locks to that player ---
+  buzz_open:
+    initial: idle
+    global:
+      clear:     { to: idle,      do: [clear_player] }
+      game_over: { to: game_over, do: [clear_player] }
+    states:
+      idle:      { transitions: { buzz: locked } }
+      locked:
+        transitions:
+          buzz: locked                    # any player, any time → re-locks
+          correct: correct
+          incorrect: incorrect
+      correct:   { hold: 2.0, then: idle }
+      incorrect: { hold: 2.0, then: idle }
+      game_over: {}
+
+  # --- buzz_after_incorrect: others may buzz only once Incorrect opens it up ---
+  buzz_after_incorrect:
+    initial: idle
+    global:
+      clear:     { to: idle,      do: [clear_bans, clear_player] }
+      game_over: { to: game_over, do: [clear_bans, clear_player] }
+    states:
+      idle:      { transitions: { buzz: locked } }
+      locked:
+        transitions:
+          correct:   correct
+          incorrect: { to: incorrect, do: [ban_current] }
+      correct:   { hold: 2.0, then: idle }
+      incorrect:
+        hold: 2.0
+        then: { to: allow_next, do: [clear_player], when_all_banned: idle }
+      allow_next: { transitions: { buzz: locked } }
+      game_over: {}
 
 lighting:
   states:
@@ -139,13 +182,7 @@ show:
       on_enter:
         audio_background: "music/Game Level Up 1.mp3"
         obs_scene: "Round1_Board"
-      state_machine:
-        extends: standard             # tweak the standard machine for this round
-        states:
-          incorrect:
-            then: allow_next          # this round: a wrong answer opens the buzzers
-      buzzers:
-        buzz_timeout_seconds: 8.0
+      state_machine: buzz_after_incorrect   # this round: a wrong answer opens the buzzers
 
 control_surface:
   enabled: true
