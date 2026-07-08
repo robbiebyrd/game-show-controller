@@ -1,7 +1,7 @@
 services:
   ola:
     build:
-      context: .
+      context: docker/ola
       dockerfile: Dockerfile
     platform: linux/arm64
     restart: unless-stopped
@@ -12,18 +12,12 @@ services:
       # - "5568:5568/udp"   # E1.31 / sACN (if enabled)
     volumes:
       - ola-config:/etc/ola
-    # USB DMX interfaces: uncomment the block that matches your device.
-    #
-    # Option A — pass through all USB devices (broadest; requires privileged):
-    # privileged: true
-    #
-    # Option B — pass through a specific USB serial adapter:
-    # devices:
-    #   - /dev/ttyUSB0:/dev/ttyUSB0
-    #
-    # Option C — pass through the full USB bus (no privileged required):
-    # devices:
-    #   - /dev/bus/usb:/dev/bus/usb
+    # ENTTEC Open DMX USB (FTDI 0403:6001) is claimed as a raw USB device via
+    # libusb by the ftdidmx plugin. olad runs unprivileged, so the device must be
+    # accessible to non-root: install the udev rule via tools/deploy-pi.sh on the
+    # Pi (sets the FTDI node to mode 0666), then this passes the USB bus through.
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
 
 volumes:
   ola-config:

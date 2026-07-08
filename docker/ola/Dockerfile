@@ -17,10 +17,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     flex \
+    g++ \
+    gcc \
+    libftdi1-dev \
     libcppunit-dev \
     libltdl-dev \
     libmicrohttpd-dev \
     libprotobuf-dev \
+    libprotoc-dev \
     libusb-1.0-0-dev \
     libtool \
     make \
@@ -42,6 +46,7 @@ RUN ./configure --prefix=/usr/local \
 FROM --platform=linux/arm64 debian:bullseye-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libftdi1-2 \
     libltdl7 \
     libmicrohttpd12 \
     libprotobuf23 \
@@ -58,9 +63,17 @@ RUN ldconfig \
     && mkdir -p /etc/ola \
     && chown ola:ola /etc/ola
 
+# Ship opendmx/karate disabled by default so olad doesn't spam "No such file"
+# for kernel DMX devices we never use. olad regenerates all other plugin configs
+# on first run. NOTE: only applied when /etc/ola is a fresh (empty) volume.
+COPY --chown=ola:ola plugin-config/ /etc/ola/
+
+# olad refuses to run as root, so it runs unprivileged. Raw libusb access to the
+# ENTTEC Open DMX USB (for the ftdidmx plugin) is granted on the host via a udev
+# rule; see tools/deploy-pi.sh and docker-compose.yml.
 USER ola
 
 # 9090: OLA web UI   9010: olad RPC
 EXPOSE 9090 9010
 
-CMD ["olad", "--no-daemon", "--config-dir", "/etc/ola"]
+CMD ["olad", "--config-dir", "/etc/ola"]
