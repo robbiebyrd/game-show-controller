@@ -3,7 +3,7 @@ import pytest
 from gameshow.bus import EventBus
 from gameshow.events import (
     BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
-    CountdownTick, CountdownEnded
+    CountdownTick, CountdownEnded, SceneChanged
 )
 from gameshow import state_machine as sm_module
 from gameshow.state_machine import StateMachine
@@ -476,6 +476,53 @@ async def test_host_transition_supersedes_countdown(fast_tick):
 
     assert any(e.reason == "superseded" for e in ended)
     assert sm.state == "correct"
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_scene_change_resets_to_new_machine_initial():
+    holder = {"cfg": make_config()}
+    bus = EventBus()
+    sm = StateMachine(bus, lambda: holder["cfg"])
+    await sm.start()
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    assert sm.state == "locked"
+
+    # Swap to a different machine whose initial state is 'ready'.
+    cfgB = make_config()
+    cfgB.state_machine.initial = "ready"
+    cfgB.state_machine.states["ready"] = StateConfig(transitions={"buzz": _t("locked")})
+    holder["cfg"] = cfgB
+
+    await bus.publish(SceneChanged(index=2, name="Round 2"))
+    assert sm.state == "ready"           # reset to the new machine's initial
+    assert sm.locked_player_id is None
+    assert sm._banned == set()
+
+    # Buzzing drives the NEW machine.
+    await bus.publish(BuzzerPressed(player_id=1))
+    assert sm.state == "locked"
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
+async def test_repeated_scene_changed_same_scene_does_not_reset():
+    bus = EventBus()
+    config = make_config()
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    await bus.publish(SceneChanged(index=1, name="R1"))
+    await bus.publish(BuzzerPressed(player_id=1))
+    assert sm.state == "locked"
+
+    # A refresh publish for the SAME scene (e.g. scene_current) must not reset play.
+    await bus.publish(SceneChanged(index=1, name="R1"))
+    assert sm.state == "locked"
+    assert sm.locked_player_id == 1
 
     await sm.stop()
 

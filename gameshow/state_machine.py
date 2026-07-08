@@ -7,7 +7,7 @@ from gameshow.config import AppConfig
 from gameshow.config import TransitionConfig
 from gameshow.events import (
     BuzzerPressed, PlayerBuzzed, StateChanged, ControlCommand,
-    CountdownTick, CountdownEnded
+    CountdownTick, CountdownEnded, SceneChanged
 )
 
 # Countdown controls act on the live countdown rather than driving a transition.
@@ -82,10 +82,27 @@ class StateMachine:
         self._banned: set[int] = set()
         self._timer: Optional[asyncio.Task] = None
         self._countdown: Optional[Countdown] = None
+        self._scene_key: Optional[tuple] = None  # last scene reset for; guards refreshes
 
     async def start(self) -> None:
         self._bus.subscribe(BuzzerPressed, self._on_buzzer_pressed)
         self._bus.subscribe(ControlCommand, self._on_control_command)
+        self._bus.subscribe(SceneChanged, self._on_scene_changed)
+
+    async def _on_scene_changed(self, event: SceneChanged) -> None:
+        # Each scene may run a different machine, so reset flow to the new machine's
+        # initial state. Ignore refresh publishes for the scene we already reset for
+        # (e.g. the scene_current feedback command) so play isn't wiped mid-round.
+        key = (event.index, event.name)
+        if key == self._scene_key:
+            return
+        self._scene_key = key
+        self._cancel_timer()
+        await self._stop_countdown(None)
+        self._banned.clear()
+        self.locked_player_id = None
+        self.state = self._config().state_machine.initial
+        log.info("Scene → %s; state machine reset to %s", event.name, self.state)
 
     async def stop(self) -> None:
         self._cancel_timer()
