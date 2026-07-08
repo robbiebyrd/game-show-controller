@@ -71,11 +71,11 @@ show:
 """
 
 
-def make_manager():
+def make_manager(config_path="config.yaml"):
     raw = yaml.safe_load(RAW_YAML)
     base_config = parse_config(raw)
     bus = EventBus()
-    return SceneManager(bus, raw, base_config), bus
+    return SceneManager(bus, raw, base_config, config_path), bus
 
 
 @pytest.mark.asyncio
@@ -151,3 +151,42 @@ async def test_scene_override_merges_state_machine():
     cfg = sm.current_config
     assert cfg.state_machine.states["incorrect"].then.to == "allow_next"
     assert cfg.state_machine.states["correct"].then.to == "idle"  # global default preserved
+
+
+@pytest.mark.asyncio
+async def test_reload_swaps_config_and_resets_index(tmp_path):
+    sm, _ = make_manager()
+    await sm.goto_name("Round 1")
+    assert sm.current_index != 0
+
+    new_yaml = RAW_YAML.replace("buzz_timeout_seconds: 10.0",
+                                "buzz_timeout_seconds: 3.0")
+    path = tmp_path / "other-show.yml"
+    path.write_text(new_yaml)
+
+    assert sm.reload(str(path)) is True
+    assert sm.current_config.buzzers.buzz_timeout_seconds == 3.0
+    assert sm.current_index == 0
+    assert sm.config_path == str(path)
+
+
+def test_reload_missing_file_keeps_current_config():
+    sm, _ = make_manager()
+    before_config = sm.current_config
+    before_path = sm.config_path
+
+    assert sm.reload("does/not/exist.yml") is False
+    assert sm.current_config is before_config
+    assert sm.config_path == before_path
+
+
+def test_reload_malformed_file_keeps_current_config(tmp_path):
+    sm, _ = make_manager()
+    before_config = sm.current_config
+
+    path = tmp_path / "broken.yml"
+    path.write_text("state_machine:\n  states: {}\n")  # missing 'initial' -> ValueError
+
+    assert sm.reload(str(path)) is False
+    assert sm.current_config is before_config
+    assert sm.config_path != str(path)

@@ -27,7 +27,7 @@ async def main() -> None:
     base_raw, base_config = load_config(CONFIG_PATH)
     bus = EventBus()
 
-    scene_manager = SceneManager(bus, base_raw, base_config)
+    scene_manager = SceneManager(bus, base_raw, base_config, CONFIG_PATH)
     def config_fn():
         return scene_manager.current_config
 
