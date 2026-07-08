@@ -52,7 +52,7 @@ lighting:
     buzz_timeout:  "/live/Control_Panel/cue/Buzzer_Timeout/activate"
     timed_lockout: "/live/Control_Panel/cue/Buzzer_Timeout/activate"
     round_start:   "/live/Control_Panel/cue/Yellow_Buzz/activate"
-    game_over:     "/live/Control_Panel/cue/Game/activate"
+    game_over:     "/live/Control_Panel/cue/Sparkle/activate"
     clear:         "/live/*/cue/*/deactivate 0"
 
 audio:

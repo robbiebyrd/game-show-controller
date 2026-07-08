@@ -1,0 +1,1 @@
+watchmedo auto-restart --patterns="*.py;*.yaml;*.yml" --recursive -- python main.py
