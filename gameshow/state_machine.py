@@ -12,7 +12,8 @@ from gameshow.events import (
 )
 
 # Countdown controls act on the live countdown rather than driving a transition.
-_COUNTDOWN_CONTROLS = {"countdown_pause", "countdown_resume", "countdown_reset", "countdown_cancel"}
+_COUNTDOWN_CONTROLS = {"countdown_pause", "countdown_resume", "countdown_reset",
+                       "countdown_cancel", "countdown_toggle"}
 
 log = logging.getLogger(__name__)
 
@@ -163,6 +164,8 @@ class StateMachine:
         await self._fire("countdown_expire")
 
     def _start_buzz_countdown(self) -> None:
+        if self._countdown is not None:
+            return  # a preserved countdown is still running; don't restart the clock
         timeout = self._config().buzzers.buzz_timeout_seconds
         if timeout is None:
             return
@@ -280,8 +283,11 @@ class StateMachine:
 
     async def _enter_state(self, name: str, arg: object = None) -> None:
         self._cancel_timer()
-        await self._stop_countdown("superseded")
         cfg = self._config().state_machine.states[name]
+        # Momentary cue states (correct/incorrect flashes) keep the subject clock
+        # ticking; every other state ends it as before.
+        if not cfg.preserve_countdown:
+            await self._stop_countdown("superseded")
         log.info("State → %s%s", name,
                  f" (player {self.locked_player_id})" if self.locked_player_id is not None else "")
         self.state = name
@@ -359,6 +365,8 @@ class StateMachine:
         if cmd == "countdown_cancel":
             await self._stop_countdown("cancelled")
         elif self._countdown:
+            if cmd == "countdown_toggle":
+                cmd = "countdown_resume" if self._countdown.paused else "countdown_pause"
             if cmd == "countdown_pause":
                 self._countdown.pause()
             elif cmd == "countdown_resume":

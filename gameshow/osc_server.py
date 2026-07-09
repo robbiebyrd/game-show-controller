@@ -1,16 +1,18 @@
 from __future__ import annotations
 import asyncio
 import logging
+import math
 from typing import Any, Callable
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.osc_server import AsyncIOOSCUDPServer
 from pythonosc.udp_client import SimpleUDPClient
 from gameshow.bus import EventBus
 from gameshow.config import AppConfig
+from gameshow.osc_map import command_for, INBOUND_ADDRESSES
 from gameshow.shows import list_shows
 from gameshow.events import (
     ControlCommand, SceneChanged, StateChanged, PlayerBuzzed,
-    ScoreChanged, AwardChanged, CounterChanged, ConfigReloaded
+    ScoreChanged, AwardChanged, CounterChanged, ConfigReloaded, CountdownTick,
 )
 
 # States after which the on-screen player label is cleared (the round's result
@@ -45,6 +47,7 @@ class OSCServer:
         self._transport = None
         self._protocol = None
         self._feedback_client: SimpleUDPClient | None = None
+        self._last_countdown_text: str | None = None
         self._setup_feedback()
         self._setup_feedback_subscriptions()
 
@@ -67,6 +70,7 @@ class OSCServer:
         self._bus.subscribe(AwardChanged, self._on_award_changed)
         self._bus.subscribe(CounterChanged, self._on_counter_changed)
         self._bus.subscribe(ConfigReloaded, self._on_config_reloaded)
+        self._bus.subscribe(CountdownTick, self._on_tick)
 
     async def _on_state_changed(self, event: StateChanged) -> None:
         self._feedback("/feedback/state", event.new_state)
@@ -90,6 +94,14 @@ class OSCServer:
     async def _on_counter_changed(self, event: CounterChanged) -> None:
         self._feedback(f"/feedback/counter/{event.name}", event.value)
 
+    async def _on_tick(self, event: CountdownTick) -> None:
+        # CountdownTick fires ~4×/sec; only send when the whole-second readout
+        # actually changes so a bound label isn't flooded with duplicate packets.
+        text = str(math.ceil(event.remaining))
+        if text != self._last_countdown_text:
+            self._last_countdown_text = text
+            self._feedback("/feedback/countdown", text)
+
     async def _on_config_reloaded(self, event: ConfigReloaded) -> None:
         show = self._config().show
         self._feedback("/feedback/show/name", show.name or "")
@@ -97,18 +109,15 @@ class OSCServer:
 
     async def _dispatch(self, address: str, args: list[Any]) -> None:
         log.info("IN  OSC %s %s", address, args)
+        # Routes shared with the Stream Deck live in osc_map (the single source
+        # of truth for button↔OSC); everything below is server-only.
+        event = command_for(address, args)
+        if event is not None:
+            await self._bus.publish(event)
+            return
+
         if address in _SIMPLE_COMMANDS:
             await self._bus.publish(ControlCommand(command=_SIMPLE_COMMANDS[address]))
-            return
-
-        if address == "/buzzer/timed_lockout":
-            duration = float(args[0]) if args else 5.0
-            await self._bus.publish(ControlCommand(command="timed_lockout", args=(duration,)))
-            return
-
-        if address == "/config/reload":
-            args = (str(args[0]),) if args else ()
-            await self._bus.publish(ControlCommand(command="config_reload", args=args))
             return
 
         if address == "/config/list":
@@ -119,16 +128,8 @@ class OSCServer:
             await self._load_show_by_index(args)
             return
 
-        if address == "/show/goto":
-            arg = args[0] if args else None
-            if isinstance(arg, int):
-                await self._bus.publish(ControlCommand(command="scene_goto_index", args=(arg,)))
-            elif isinstance(arg, str):
-                await self._bus.publish(ControlCommand(command="scene_goto_name", args=(arg,)))
-            return
-
-        if address in ("/audio/background/play", "/audio/effect/play",
-                       "/audio/background/volume", "/audio/effect/volume"):
+        if address in ("/audio/background/play", "/audio/background/volume",
+                       "/audio/effect/volume"):
             arg = args[0] if args else None
             cmd = address.lstrip("/").replace("/", "_")
             await self._bus.publish(ControlCommand(command=cmd, args=(arg,) if arg is not None else ()))
@@ -165,12 +166,12 @@ class OSCServer:
         self._loop = asyncio.get_running_loop()
         cfg = self._config().service
         dispatcher = Dispatcher()
-        for address in list(_SIMPLE_COMMANDS.keys()) + [
-            "/buzzer/timed_lockout", "/show/goto",
-            "/config/reload", "/config/list", "/config/load",
+        addresses = set(_SIMPLE_COMMANDS) | set(INBOUND_ADDRESSES) | {
+            "/config/list", "/config/load",
             "/audio/background/play", "/audio/background/volume",
-            "/audio/effect/play", "/audio/effect/volume",
-        ]:
+            "/audio/effect/volume",
+        }
+        for address in sorted(addresses):
             dispatcher.map(address, self._make_handler(address))
 
         server = AsyncIOOSCUDPServer(

@@ -1,0 +1,758 @@
+# $10,000 Pyramid show file
+#
+# Structure: Intro → 3 rounds × (Team A subject + Team B subject) →
+#            Tiebreaker (if needed) → Winner's Circle → Outro
+#
+# Two "players" represent the two competing teams (celebrity + civilian). The
+# host locks in whichever team is playing a subject (buzz), runs the subject
+# clock (round_start), and — once the clock expires — tallies the items/subjects
+# the team conveyed (Correct).
+#
+# TIMING MODEL (important):
+#   Pyramid is a beat-the-clock game, so the subject clock is a single
+#   continuous countdown. The host scores LIVE while it ticks: Correct and
+#   Cuckoo (incorrect) fire their sound/light cues without stopping the clock.
+#   This relies on the engine's `preserve_countdown` flag — momentary cue states
+#   (the correct/cuckoo flashes) keep the running countdown alive, and returning
+#   to `playing` resumes it rather than restarting it. The clock ends only when
+#   it expires (countdown_expire), the board is cleared, or the host stops it.
+#
+#   - Front game:      7 items in 30 seconds, 1 point each (perfect 21 = $1,000
+#                      bonus, awarded manually by the host).
+#   - Winner's Circle: 6 subjects in 60 seconds. Bottom three $50, middle two
+#                      $100, top $200; clearing all six wins the $10,000 jackpot.
+#                      Use the $50/$100/$200 buttons to set a subject's value
+#                      before pressing Correct.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  TouchOSC control surface — OSC address reference
+#  Service listens on osc_server_port (default 21601); feedback goes to
+#  touchosc_host:touchosc_port (set in config.yaml or config.example.yaml).
+#
+#  INCOMING commands (TouchOSC → server):
+#   /buzzer/correct              record a conveyed item / subject (in tally)
+#   /buzzer/incorrect            undo a mis-recorded item / subject
+#   /buzzer/clear                reset the current subject to idle
+#   /buzzer/round_start          start the subject clock
+#   /buzzer/game_over            end the game
+#   /show/advance                advance to next scene
+#   /show/previous               go back to previous scene
+#   /show/goto  <name|index>     jump to a named scene or numeric index
+#   /audio/background/play <f>   start background music file
+#   /audio/background/stop       stop background music
+#   /audio/effect/play  <f>      fire a one-shot sound effect
+#   /config/reload <file>        hot-reload a show file from shows/
+#   /config/list                 emit a list of available show files
+#
+#  OUTGOING feedback (server → TouchOSC):
+#   /feedback/state  <name>             current state machine state
+#   /feedback/scene  "<idx>: <name>"    active scene
+#   /feedback/player "<id>: <name>"     team currently locked in
+#   /feedback/score/<player_id> <val>   score for a team
+#   /feedback/counter/items <0-7>       items conveyed this subject
+#   /feedback/counter/subjects <0-6>    subjects cleared in the Winner's Circle
+# ─────────────────────────────────────────────────────────────────────────────
+
+show:
+  name: "$10,000 Pyramid"
+  description: >
+    Two teams (a celebrity and a civilian each) play a word-association game.
+    In the front game they describe seven items in 30 seconds across three
+    rounds; the high-scoring team advances to the Winner's Circle to chase the
+    $10,000 jackpot.
+  scenes:
+    - name: "Intro"
+      on_enter:
+        audio_background: "Game Level Up 1.mp3"
+        obs_scene: "Pyramid_Intro"
+        lighting: "/live/Control_Panel/cue/Intro_Sweep/activate"
+      buzzers:
+        all_enabled: false
+
+    # ── Round 1 (celebrities give clues) ──────────────────────────────────────
+    - name: "Round 1 - Team A"
+      on_enter:
+        obs_scene: "Pyramid_Board"
+        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+      state_machine: front_game
+      buzzers:
+        buzz_timeout_seconds: 30.0    # the 30-second subject clock
+
+    - name: "Round 1 - Team B"
+      on_enter:
+        obs_scene: "Pyramid_Board"
+        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+      state_machine: front_game
+      buzzers:
+        buzz_timeout_seconds: 30.0
+
+    # ── Round 2 (civilians give clues) ────────────────────────────────────────
+    - name: "Round 2 - Team A"
+      on_enter:
+        obs_scene: "Pyramid_Board"
+        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+      state_machine: front_game
+      buzzers:
+        buzz_timeout_seconds: 30.0
+
+    - name: "Round 2 - Team B"
+      on_enter:
+        obs_scene: "Pyramid_Board"
+        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+      state_machine: front_game
+      buzzers:
+        buzz_timeout_seconds: 30.0
+
+    # ── Round 3 (team's choice of clue-giver) ─────────────────────────────────
+    - name: "Round 3 - Team A"
+      on_enter:
+        obs_scene: "Pyramid_Board"
+        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+      state_machine: front_game
+      buzzers:
+        buzz_timeout_seconds: 30.0
+
+    - name: "Round 3 - Team B"
+      on_enter:
+        obs_scene: "Pyramid_Board"
+        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+      state_machine: front_game
+      buzzers:
+        buzz_timeout_seconds: 30.0
+
+    # ── Tiebreaker (only if the front-game scores are level) ──────────────────
+    # Extra subjects (words beginning with a set letter) until one team leads.
+    - name: "Tiebreaker"
+      on_enter:
+        audio_background: "Game Error 2.mp3"
+        obs_scene: "Pyramid_Board"
+        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+      state_machine: front_game
+      buzzers:
+        buzz_timeout_seconds: 30.0
+
+    # ── Winner's Circle (the bonus endgame) ───────────────────────────────────
+    # The winning team plays six subjects in 60 seconds. reset_scores_on_enter
+    # zeroes the front-game points so the circle starts fresh in dollars.
+    - name: "Winner's Circle"
+      on_enter:
+        audio_background: "Game Checkpoint Sound 1.mp3"
+        obs_scene: "Pyramid_Winners_Circle"
+        lighting: "/live/Control_Panel/cue/Winners_Circle_Ready/activate"
+      state_machine: winners_circle
+      buzzers:
+        buzz_timeout_seconds: 60.0    # the 60-second Winner's Circle clock
+
+    - name: "Outro"
+      on_enter:
+        audio_background: "Game Reveal Sound 2.mp3"
+        obs_scene: "Pyramid_Outro"
+        lighting: "/live/Control_Panel/cue/Winner_Celebration/activate"
+      buzzers:
+        all_enabled: false
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Buzzers
+# ─────────────────────────────────────────────────────────────────────────────
+buzzers:
+  buzz_timeout_seconds: null      # default; the subject clock is set per scene
+  players:
+    - { id: 1, name: "Team A", key: "1", enabled: true }
+    - { id: 2, name: "Team B", key: "2", enabled: true }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  State machine library
+# ─────────────────────────────────────────────────────────────────────────────
+state_machine: front_game    # default; each scene overrides as needed
+
+state_machines:
+
+  # ── Front game subject ───────────────────────────────────────────────────────
+  # The host locks in the playing team (buzz), starts the 30-second clock
+  # (round_start), then scores LIVE as the team races: Correct rewards a point
+  # and rings in (green), Cuckoo (incorrect) fires the buzzer (red). Both are
+  # momentary cue states that preserve the running clock. Seven items is a
+  # perfect subject; otherwise the clock expiring ends it.
+  front_game:
+    initial: idle
+    scoring:
+      default_award: 1.0        # one point per conveyed item
+    counters:
+      items:
+        initial: 0
+        max: 7
+    global:
+      clear:            { to: idle, do: [clear_player, { reset: items }] }
+      game_over:        { to: game_over, do: [clear_player] }
+      countdown_expire: { to: subject_complete }   # clock ran out (even mid-flash)
+      perfect:          perfect                    # host awards the perfect-21 ($1,000) bonus
+    states:
+      idle:
+        transitions: { buzz: armed }             # lock in the team about to play
+      armed:                                     # host reads the category, then starts the clock
+        transitions:
+          buzz: armed                            # re-pick the playing team
+          round_start: playing
+      playing:                                   # 30-second clock; scored live
+        behaviors: [countdown]
+        preserve_countdown: true
+        transitions:
+          correct:
+            to: correct
+            do: [award, { increment: items }]
+            when_counter_at: { counter: items, value: 7, to: subject_complete }
+          incorrect: cuckoo                      # "cuckoo" — said the word / illegal clue
+          time_up: subject_complete              # host ends the subject early
+      # Brief flashes so back-to-back scoring in a fast round isn't dropped.
+      correct:          { hold: 0.4, then: playing, preserve_countdown: true }
+      cuckoo:           { hold: 0.4, then: playing, preserve_countdown: true }
+      subject_complete: {}                        # perfect 7, time up, or host-ended
+      perfect:                                    # a perfect 21 across all three subjects → $1,000
+        behaviors: [{ award: 1000 }]              # bonus to the team currently locked in
+        hold: 3.0
+        then: subject_complete
+      game_over:        {}
+
+  # ── Winner's Circle ──────────────────────────────────────────────────────────
+  # The winning team plays six subjects in 60 seconds, scored live. Set a
+  # subject's value ($50 / $100 / $200) then press Correct as it is conveyed;
+  # illegal clues fire Cuckoo. Clearing all six trips the $10,000 jackpot.
+  winners_circle:
+    initial: idle
+    reset_scores_on_enter: true   # start the circle fresh (front-game points cleared)
+    scoring:
+      default_award: 50.0         # bottom-three subjects; host overrides for $100 / $200
+    counters:
+      subjects:
+        initial: 0
+        max: 6
+    global:
+      clear:            { to: idle, do: [clear_player, { reset: subjects }] }
+      game_over:        { to: game_over, do: [clear_player] }
+      countdown_expire: { to: times_up }
+    states:
+      idle:
+        transitions: { buzz: armed }             # lock in the winning team
+      armed:
+        transitions:
+          buzz: armed
+          round_start: playing
+      playing:                                   # 60-second clock; scored live
+        behaviors: [countdown]
+        preserve_countdown: true
+        transitions:
+          correct:
+            to: subject_win
+            do: [award, { increment: subjects }]
+            when_counter_at: { counter: subjects, value: 6, to: board_cleared }
+          incorrect: cuckoo
+          time_up: times_up                      # host ends the round early
+      subject_win:   { hold: 1.0, then: playing, preserve_countdown: true }
+      cuckoo:        { hold: 0.8, then: playing, preserve_countdown: true }
+      times_up:      {}                           # 60 s elapsed without clearing the board
+      board_cleared:                             # all six → the $10,000 jackpot
+        behaviors: [reset_scores, { award: 10000 }]
+      game_over:     {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Lighting  (OSC → DMX controller)
+# ─────────────────────────────────────────────────────────────────────────────
+lighting:
+  states:
+    idle:             "/live/Control_Panel/cue/Board_Reveal/activate"
+    armed:            "/live/Control_Panel/cue/Team_Ready/activate"
+    playing:          "/live/Control_Panel/cue/Subject_Clock/activate"
+    correct:          "/live/Control_Panel/cue/Item_Correct/activate"
+    cuckoo:           "/live/Control_Panel/cue/Cuckoo/activate"
+    subject_complete: "/live/Control_Panel/cue/Subject_Score/activate"
+    perfect:          "/live/Control_Panel/cue/Perfect_21/activate"
+    subject_win:      "/live/Control_Panel/cue/Circle_Correct/activate"
+    times_up:         "/live/Control_Panel/cue/Time_Up/activate"
+    board_cleared:    "/live/Control_Panel/cue/Winners_Circle_Win/activate"
+    game_over:        "/live/Control_Panel/cue/Winner_Reveal/activate"
+    clear:            "/live/*/cue/*/deactivate 0"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Audio
+# ─────────────────────────────────────────────────────────────────────────────
+audio:
+  default_background_volume: 0.7
+  default_effect_volume: 1.0
+  # NB: no cue on `playing` — it is re-entered after every live-scoring flash,
+  # so a sound there would repeat. Per-item feedback lives on correct/cuckoo.
+  states:
+    correct:
+      effect: "Game Coin 2.mp3"                # item conveyed — ding
+    cuckoo:
+      effect: "Game Error 2.mp3"               # illegal clue — the cuckoo buzzer
+    subject_complete:
+      effect: "Game Score Count 2.mp3"         # subject over (perfect or time)
+    perfect:
+      effect: "Game Level Up 1.mp3"            # perfect 21 — $1,000 fanfare
+    subject_win:
+      effect: "Game Achievement Sound 1.mp3"   # subject cleared in the circle
+    times_up:
+      effect: "Mission Failed Sound Effect 2.mp3"  # 60 s elapsed, board not cleared
+    board_cleared:
+      effect: "Game Level Up 1.mp3"            # $10,000!
+    game_over:
+      effect: "Game Reveal Sound 2.mp3"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  OBS
+# ─────────────────────────────────────────────────────────────────────────────
+obs:
+  # Momentary cue states (correct/cuckoo/subject_win) are intentionally omitted
+  # so the gameplay scene stays put while sound + light cues fire over it.
+  states:
+    idle:             "Pyramid_Board"
+    armed:            "Pyramid_Team_Ready"
+    playing:          "Pyramid_Subject_Play"
+    subject_complete: "Pyramid_Subject_Score"
+    perfect:          "Pyramid_Perfect_21"
+    times_up:         "Pyramid_Time_Up"
+    board_cleared:    "Pyramid_Winners_Circle_Win"
+    game_over:        "Pyramid_Game_Over"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Stream Deck control surface  (Elgato MK.2 / Original, 3 × 5, keys 0–14)
+#
+#  Root layout (front game):
+#    [0 Reset]   [1 Team A]  [2 Team B]  [3 Start]   [4 Stop]
+#    [5 Correct] [6 Cuckoo]  [7 Timer]   [8 Items]   [9 Score]
+#    [10 ←Scene] [11 Scene]  [12 Scene→] [13 Circle] [14 More]
+#
+#  Per-subject flow:
+#    Team A/B → Start (30 s clock) → Correct / Cuckoo live as they play →
+#    clock expires (or Stop) → advance scene.
+# ─────────────────────────────────────────────────────────────────────────────
+control_surface:
+  enabled: true
+  brightness: 100
+  label_align: center
+  label_wrap: true
+  fa_path: "node_modules/@fortawesome/fontawesome-pro"
+  fa_type: pro
+  fa_weight: solid
+
+  root:
+    buttons:
+      # ── Row 1: setup & clock ──────────────────────────────────────────────────
+      button_0:
+        type: reset_buzzer
+        label: "Reset"
+        color: "#552222"
+        fa_icon: "rotate-left"
+        fa_size: 28
+        fa_color: "#ffaaaa"
+
+      button_1:
+        type: buzz
+        label: "Team A"
+        player_id: 1
+        color: "#1a3a6e"
+        fa_icon: "user-group"
+        fa_size: 26
+        label_align: bottom
+        pressed:
+          color: "#2255cc"
+          fa_color: "#ffffff"
+
+      button_2:
+        type: buzz
+        label: "Team B"
+        player_id: 2
+        color: "#6e1a1a"
+        fa_icon: "user-group"
+        fa_size: 26
+        label_align: bottom
+        pressed:
+          color: "#cc2222"
+          fa_color: "#ffffff"
+
+      button_3:
+        type: state
+        label: "Start"
+        state: round_start
+        color: "#003344"
+        fa_icon: "play"
+        fa_size: 30
+        fa_color: "#66ddff"
+        label_align: bottom
+
+      button_4:
+        type: state
+        label: "Stop"
+        state: time_up
+        color: "#442200"
+        fa_icon: "stop"
+        fa_size: 30
+        fa_color: "#ffbb66"
+        label_align: bottom
+
+      # ── Row 2: scoring & readouts ─────────────────────────────────────────────
+      button_5:
+        type: state
+        label: "Correct"
+        state: correct
+        color: "#004400"
+        fa_icon: "check"
+        fa_size: 38
+        fa_color: "#00ff88"
+        pressed:
+          color: "#006600"
+
+      button_6:
+        type: state
+        label: "Cuckoo"
+        state: incorrect
+        color: "#880000"
+        fa_icon: "xmark"
+        fa_size: 40
+        fa_color: "#ffffff"
+        label_align: bottom
+        pressed:
+          color: "#cc0000"
+
+      button_7:
+        type: countdown
+        action: display
+        label: "Timer"
+
+      button_8:
+        type: counter_display
+        counter: items
+        label: "Items"
+
+      button_9:
+        type: score_display
+        label: "Score"
+
+      # ── Row 3: navigation & pages ─────────────────────────────────────────────
+      button_10:
+        type: scene_previous
+        fa_icon: "caret-large-left"
+        fa_size: 52
+
+      button_11:
+        type: scene_current
+        label: "Scene"
+
+      button_12:
+        type: scene_advance
+        fa_icon: "caret-large-right"
+        fa_size: 52
+
+      button_13:
+        type: page
+        label: "Circle"
+        fa_icon: "trophy"
+        fa_size: 26
+        color: "#332200"
+        page:
+          buttons:
+            # Winner's Circle controls (key 10 is the auto "back" button)
+            button_0:
+              type: buzz
+              label: "Team A"
+              player_id: 1
+              color: "#1a3a6e"
+              fa_icon: "user-group"
+              fa_size: 24
+              label_align: bottom
+            button_1:
+              type: buzz
+              label: "Team B"
+              player_id: 2
+              color: "#6e1a1a"
+              fa_icon: "user-group"
+              fa_size: 24
+              label_align: bottom
+            button_2:
+              type: state
+              label: "Start"
+              state: round_start
+              color: "#003344"
+              fa_icon: "play"
+              fa_size: 26
+              label_align: bottom
+            button_3:
+              type: state
+              label: "Stop"
+              state: time_up
+              color: "#442200"
+              fa_icon: "stop"
+              fa_size: 26
+              label_align: bottom
+            button_4:
+              type: state
+              label: "Got It"
+              state: correct
+              color: "#004400"
+              fa_icon: "check"
+              fa_size: 34
+              fa_color: "#00ff88"
+            button_5:
+              type: state
+              label: "Cuckoo"
+              state: incorrect
+              color: "#880000"
+              fa_icon: "xmark"
+              fa_size: 32
+              fa_color: "#ffffff"
+            button_6:
+              type: set_award
+              label: "$50"
+              value: 50
+              color: "#223322"
+            button_7:
+              type: set_award
+              label: "$100"
+              value: 100
+              color: "#224422"
+            button_8:
+              type: set_award
+              label: "$200"
+              value: 200
+              color: "#116622"
+            button_9:
+              type: countdown
+              action: display
+              label: "Timer"
+            button_11:
+              type: counter_display
+              counter: subjects
+              label: "Subjects"
+            button_12:
+              type: score_display
+              label: "Winnings"
+            button_13:
+              type: state_display
+              label: "State"
+            button_14:
+              type: reset_buzzer
+              label: "Reset"
+              color: "#552222"
+
+      button_14:
+        type: page
+        label: "More"
+        fa_icon: "ellipsis"
+        fa_size: 28
+        color: "#222233"
+        page:
+          buttons:
+            # Scene jump shortcuts (use Scene→ for the Team B half of each round)
+            button_0:
+              type: scene_goto
+              label: "Intro"
+              target: "Intro"
+              color: "#222244"
+            button_1:
+              type: scene_goto
+              label: "Rnd 1"
+              target: "Round 1 - Team A"
+              color: "#223344"
+            button_2:
+              type: scene_goto
+              label: "Rnd 2"
+              target: "Round 2 - Team A"
+              color: "#223344"
+            button_3:
+              type: scene_goto
+              label: "Rnd 3"
+              target: "Round 3 - Team A"
+              color: "#223344"
+            button_4:
+              type: scene_goto
+              label: "Tiebreak"
+              target: "Tiebreaker"
+              color: "#332233"
+            button_5:
+              type: scene_goto
+              label: "Circle"
+              target: "Winner's Circle"
+              color: "#332244"
+            button_6:
+              type: scene_goto
+              label: "Outro"
+              target: "Outro"
+              color: "#224422"
+            button_7:
+              type: state
+              label: "Game Over"
+              state: game_over
+              color: "#552222"
+            # Timer sub-page
+            button_8:
+              type: page
+              label: "Timer"
+              fa_icon: "stopwatch"
+              fa_size: 26
+              color: "#223322"
+              page:
+                buttons:
+                  button_0:
+                    type: countdown
+                    action: display
+                    label: "Timer"
+                  button_1:
+                    type: countdown
+                    action: toggle
+                    label: "Pause/Go"
+                  button_2:
+                    type: countdown
+                    action: reset
+                    label: "Reset"
+                  button_3:
+                    type: countdown
+                    action: cancel
+                    label: "Cancel"
+                    color: "#552222"
+            # OBS sub-page
+            button_9:
+              type: page
+              label: "OBS"
+              fa_icon: "video"
+              fa_size: 26
+              color: "#332211"
+              page:
+                buttons:
+                  button_0:
+                    type: obs_scene
+                    label: "Intro"
+                    scene: "Pyramid_Intro"
+                  button_1:
+                    type: obs_scene
+                    label: "Board"
+                    scene: "Pyramid_Board"
+                  button_2:
+                    type: obs_scene
+                    label: "Subject"
+                    scene: "Pyramid_Subject_Play"
+                  button_3:
+                    type: obs_scene
+                    label: "Score"
+                    scene: "Pyramid_Subject_Score"
+                  button_4:
+                    type: obs_scene
+                    label: "Circle"
+                    scene: "Pyramid_Winners_Circle"
+                  button_5:
+                    type: obs_scene
+                    label: "Circle Win"
+                    scene: "Pyramid_Winners_Circle_Win"
+                  button_6:
+                    type: obs_scene
+                    label: "Game Over"
+                    scene: "Pyramid_Game_Over"
+                  button_7:
+                    type: obs_scene
+                    label: "Outro"
+                    scene: "Pyramid_Outro"
+            # Lights sub-page
+            button_11:
+              type: page
+              label: "Lights"
+              fa_icon: "lightbulb"
+              fa_size: 26
+              color: "#332200"
+              page:
+                buttons:
+                  button_0:
+                    type: lighting
+                    label: "Board"
+                    osc: "/live/Control_Panel/cue/Board_Reveal/activate"
+                  button_1:
+                    type: lighting
+                    label: "Clock"
+                    osc: "/live/Control_Panel/cue/Subject_Clock/activate"
+                  button_2:
+                    type: lighting
+                    label: "Reveal"
+                    osc: "/live/Control_Panel/cue/Reveal/activate"
+                  button_3:
+                    type: lighting
+                    label: "Correct"
+                    osc: "/live/Control_Panel/cue/Item_Correct/activate"
+                    color: "#004400"
+                  button_4:
+                    type: lighting
+                    label: "Circle"
+                    osc: "/live/Control_Panel/cue/Winners_Circle_Ready/activate"
+                  button_5:
+                    type: lighting
+                    label: "Jackpot"
+                    osc: "/live/Control_Panel/cue/Winners_Circle_Win/activate"
+                    color: "#332200"
+                  button_6:
+                    type: lighting
+                    label: "Winner"
+                    osc: "/live/Control_Panel/cue/Winner_Reveal/activate"
+                  button_7:
+                    type: lighting
+                    label: "Clear All"
+                    osc: "/live/*/cue/*/deactivate 0"
+                    color: "#332222"
+            # Sounds sub-page
+            button_12:
+              type: page
+              label: "Sounds"
+              fa_icon: "music"
+              fa_size: 26
+              color: "#1a2233"
+              page:
+                buttons:
+                  button_0:
+                    type: sound
+                    label: "Theme"
+                    path: "Game Level Up 1.mp3"
+                  button_1:
+                    type: sound
+                    label: "Clock"
+                    path: "Game Checkpoint Sound 1.mp3"
+                  button_2:
+                    type: sound
+                    label: "Item!"
+                    path: "Game Coin 2.mp3"
+                  button_3:
+                    type: sound
+                    label: "Cuckoo"
+                    path: "Game Error 2.mp3"
+                    color: "#440000"
+                  button_4:
+                    type: sound
+                    label: "Score"
+                    path: "Game Score Count 2.mp3"
+                  button_5:
+                    type: sound
+                    label: "Circle Win"
+                    path: "Game Achievement Sound 1.mp3"
+                    color: "#004422"
+                  button_6:
+                    type: sound
+                    label: "Reveal"
+                    path: "Game Reveal Sound 2.mp3"
+                  button_7:
+                    type: stop_sounds
+                    label: "Stop All"
+                    color: "#552222"
+            button_13:
+              type: state_display
+              label: "State"
+            # Perfect-21 bonus: award $1,000 to the locked-in team when they
+            # convey all 21 items across their three subjects.
+            button_14:
+              type: state
+              label: "Perfect"
+              state: perfect
+              color: "#443300"
+              fa_icon: "star"
+              fa_size: 30
+              fa_color: "#ffd24a"
