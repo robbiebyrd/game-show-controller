@@ -472,6 +472,26 @@ async def test_countdown_cancel_stops_timer_but_stays_locked(fast_tick):
 
 
 @pytest.mark.asyncio
+async def test_countdown_toggle_pauses_then_resumes(fast_tick):
+    bus = EventBus()
+    config = make_config(buzz_timeout_seconds=0.3)
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    await bus.publish(BuzzerPressed(player_id=1))
+    await asyncio.sleep(0.02)
+    assert sm._countdown is not None and not sm._countdown.paused
+
+    await bus.publish(ControlCommand(command="countdown_toggle"))
+    assert sm._countdown.paused          # first toggle pauses a running countdown
+
+    await bus.publish(ControlCommand(command="countdown_toggle"))
+    assert not sm._countdown.paused      # second toggle resumes it
+
+    await sm.stop()
+
+
+@pytest.mark.asyncio
 async def test_host_transition_supersedes_countdown(fast_tick):
     bus = EventBus()
     config = make_config(buzz_timeout_seconds=0.3, correct_hold=0.05)
@@ -900,4 +920,65 @@ async def test_config_reloaded_resets_to_clean_slate():
     assert sm.counters == {}
     assert sm.pending_award is None
     assert sm._scene_key is None
+    await sm.stop()
+
+
+def _preserve_countdown_config(buzz_timeout_seconds):
+    """A Pyramid-style machine: a live-scored clock in ``playing`` whose
+    momentary ``correct`` flash preserves the running countdown."""
+    score_correct = _t("correct", do=[Behavior("award"), Behavior("increment", "items")])
+    states = {
+        "idle": StateConfig(transitions={"buzz": _t("playing")}),
+        "playing": StateConfig(
+            behaviors=["countdown"],
+            preserve_countdown=True,
+            transitions={"correct": score_correct},
+        ),
+        "correct": StateConfig(hold=0.04, then=_t("playing"), preserve_countdown=True),
+        "done": StateConfig(),
+    }
+    global_ = {"countdown_expire": _t("done")}
+    return AppConfig(
+        service=ServiceConfig(),
+        buzzers=BuzzerConfig(
+            players=[PlayerConfig(id=1, name="P1", key="1", enabled=True)],
+            buzz_timeout_seconds=buzz_timeout_seconds),
+        state_machine=StateMachineConfig(
+            initial="idle", states=states, global_=global_,
+            scoring=ScoringConfig(default_award=1.0),
+            counters={"items": CounterConfig(initial=0, max=7)}),
+        lighting=LightingConfig(), audio=AudioConfig(), obs=OBSConfig(), scenes=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_preserve_countdown_survives_scoring_flash(fast_tick):
+    bus = EventBus()
+    config = _preserve_countdown_config(buzz_timeout_seconds=0.3)
+    sm = StateMachine(bus, lambda: config)
+    await sm.start()
+
+    ticks, ended, scores = [], [], []
+    async def on_tick(e): ticks.append(e)
+    async def on_end(e): ended.append(e)
+    async def on_score(e): scores.append(e)
+    bus.subscribe(CountdownTick, on_tick)
+    bus.subscribe(CountdownEnded, on_end)
+    bus.subscribe(ScoreChanged, on_score)
+
+    await bus.publish(BuzzerPressed(player_id=1))         # → playing, clock starts
+    await asyncio.sleep(0.1)
+    await bus.publish(ControlCommand(command="correct"))  # score live; must not end the clock
+    assert not any(e.reason == "superseded" for e in ended), \
+        "scoring flash must not supersede a preserved countdown"
+
+    await asyncio.sleep(0.35)                             # flash returns to playing, then clock expires
+
+    assert any(e.reason == "expired" for e in ended)      # ran to zero, was not restarted
+    assert not any(e.reason == "superseded" for e in ended)
+    assert sm.state == "done"
+    assert sm.scores.get(1) == 1                           # the live point stuck
+    # No restart: remaining time never jumps back up across the flash.
+    assert all(b.remaining <= a.remaining + 1e-6 for a, b in zip(ticks, ticks[1:]))
+
     await sm.stop()

@@ -5,7 +5,7 @@ from gameshow.bus import EventBus
 from gameshow.config import AppConfig, ServiceConfig, BuzzerConfig, PlayerConfig, StateMachineConfig, LightingConfig, AudioConfig, OBSConfig, ShowConfig
 from gameshow.events import (
     ControlCommand, SceneChanged, StateChanged, ScoreChanged, AwardChanged, CounterChanged,
-    ConfigReloaded,
+    ConfigReloaded, BuzzerPressed, CountdownTick,
 )
 from gameshow.osc_server import OSCServer
 
@@ -236,3 +236,79 @@ async def test_config_load_out_of_range_is_ignored(tmp_path, monkeypatch):
 
     await server._dispatch("/config/load", [99])
     assert received == []
+
+
+# ── Full-parity inbound routes (via osc_map.command_for) ────────────────────
+
+@pytest.mark.asyncio
+async def test_generic_trigger_publishes_arbitrary_state_command():
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    received = []
+    async def capture(e): received.append(e)
+    bus.subscribe(ControlCommand, capture)
+
+    await server._dispatch("/trigger", ["three_strikes"])
+    assert received[0] == ControlCommand(command="three_strikes")
+
+
+@pytest.mark.asyncio
+async def test_buzz_press_publishes_buzzer_pressed():
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    received = []
+    async def capture(e): received.append(e)
+    bus.subscribe(BuzzerPressed, capture)
+
+    await server._dispatch("/buzzer/press", [2])
+    assert received[0] == BuzzerPressed(player_id=2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("address,args,expected", [
+    ("/lighting/cue", ["/live/x/activate"],
+     ControlCommand(command="dmx_cue", args=("/live/x/activate",))),
+    ("/obs/scene", ["Intro"],
+     ControlCommand(command="obs_scene_set", args=("Intro",))),
+    ("/award/set", [50], ControlCommand(command="set_award", args=(50.0,))),
+    ("/countdown/pause", [], ControlCommand(command="countdown_pause")),
+    ("/countdown/toggle", [], ControlCommand(command="countdown_toggle")),
+])
+async def test_parity_routes_publish_expected_command(address, args, expected):
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    received = []
+    async def capture(e): received.append(e)
+    bus.subscribe(ControlCommand, capture)
+
+    await server._dispatch(address, args)
+    assert received[0] == expected
+
+
+@pytest.mark.asyncio
+async def test_countdown_tick_emits_feedback_countdown():
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    mock_client = MagicMock()
+    server._feedback_client = mock_client
+
+    await server._on_tick(CountdownTick(remaining=4.2, total=10.0))
+
+    calls = [c for c in mock_client.send_message.call_args_list
+             if c.args[0] == "/feedback/countdown"]
+    assert calls and calls[0].args[1] == ["5"]  # ceil(4.2)
+
+
+@pytest.mark.asyncio
+async def test_countdown_feedback_dedupes_same_second():
+    bus = EventBus()
+    server = OSCServer(bus, lambda: make_config())
+    mock_client = MagicMock()
+    server._feedback_client = mock_client
+
+    await server._on_tick(CountdownTick(remaining=4.9, total=10.0))
+    await server._on_tick(CountdownTick(remaining=4.2, total=10.0))  # still ceil 5
+
+    calls = [c for c in mock_client.send_message.call_args_list
+             if c.args[0] == "/feedback/countdown"]
+    assert len(calls) == 1

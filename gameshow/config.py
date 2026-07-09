@@ -98,6 +98,7 @@ class StateConfig:
     hold: Optional[float] = None              # auto-return delay (seconds)
     hold_from_arg: Optional[float] = None     # default hold when the trigger carries no duration
     then: Optional[TransitionConfig] = None   # where to go after ``hold``/``hold_from_arg``
+    preserve_countdown: bool = False          # keep a running countdown alive on entry (momentary cues)
 
     def __post_init__(self) -> None:
         self.behaviors = [_as_behavior(b) for b in self.behaviors]
@@ -322,6 +323,7 @@ def _parse_state_machine(raw: dict) -> StateMachineConfig:
             hold=s.get("hold"),
             hold_from_arg=s.get("hold_from_arg"),
             then=_parse_transition(s["then"]) if "then" in s else None,
+            preserve_countdown=s.get("preserve_countdown", False),
         )
     global_ = {t: _parse_transition(v) for t, v in (raw.get("global") or {}).items()}
 
