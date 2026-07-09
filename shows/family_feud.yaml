@@ -131,17 +131,29 @@ show:
         lighting: "/live/Control_Panel/cue/Round_Play/activate"
       state_machine: playing
 
-    # ── Speed Round ────────────────────────────────────────────────────────────
-    # Player 1 answers 5 questions in 25 s, then Player 2 answers the same 5.
-    # buzz_timeout_seconds drives the countdown; buzzers are disabled (no buzz-in).
-    - name: "Speed Round"
+    # ── Speed Round (Fast Money) ────────────────────────────────────────────────
+    # One timed turn per player, each in its own scene: Player 1 has 25 s and
+    # Player 2 has 30 s. buzz_timeout_seconds drives each countdown; buzzers are
+    # disabled (no buzz-in). The host cues round_start to start each clock, then
+    # advances the scene for Player 2 and reveals the combined tally.
+    - name: "Speed Round - Player 1"
       on_enter:
         audio_background: "music/FamilyFeud_SpeedRound_Intro.mp3"
-        obs_scene: "SpeedRound_Ready"
+        obs_scene: "SpeedRound_Player1"
         lighting: "/live/Control_Panel/cue/SpeedRound_Ready/activate"
       state_machine: speed_round
       buzzers:
         buzz_timeout_seconds: 25.0
+        all_enabled: false
+
+    - name: "Speed Round - Player 2"
+      on_enter:
+        audio_background: "music/FamilyFeud_SpeedRound_Intro.mp3"
+        obs_scene: "SpeedRound_Player2"
+        lighting: "/live/Control_Panel/cue/SpeedRound_Ready/activate"
+      state_machine: speed_round
+      buzzers:
+        buzz_timeout_seconds: 30.0
         all_enabled: false
 
     - name: "Outro"
@@ -233,11 +245,11 @@ state_machines:
       round_start:    { hold: 2.0, then: idle }
       game_over:      {}
 
-  # ── Speed Round ────────────────────────────────────────────────────────────
-  # Host triggers round_start to begin Player 1's 25-second turn (driven by
-  # buzz_timeout_seconds on the Speed Round scene). When the clock expires,
-  # Player 2's 25-second turn begins automatically. After both turns the reveal
-  # state holds until the host fires game_over.
+  # ── Speed Round (Fast Money) ─────────────────────────────────────────────────
+  # A single timed turn per scene; the scene's buzz_timeout_seconds sets the
+  # length (25 s for Player 1, 30 s for Player 2). The host cues round_start to
+  # begin the clock; when it expires the time_up cue fires. Advance the scene for
+  # Player 2's turn, then press Reveal to show the combined tally before the win.
   speed_round:
     initial: idle
     global:
@@ -245,18 +257,16 @@ state_machines:
       game_over: { to: game_over }
     states:
       idle:
-        transitions: { round_start: player1_turn }
-      player1_turn:
-        behaviors: [countdown]                   # starts 25 s timer
+        transitions: { round_start: turn }
+      turn:
+        behaviors: [countdown]                   # scene clock: 25 s (P1) or 30 s (P2)
         transitions:
-          countdown_expire: player1_done
-      player1_done:
-        hold: 3.0
-        then: player2_turn
-      player2_turn:
-        behaviors: [countdown]                   # starts another 25 s timer
+          countdown_expire: time_up
+          time_up: time_up                       # host can stop the clock early
+      time_up:
         transitions:
-          countdown_expire: reveal
+          round_start: turn                      # re-run the clock if needed
+          reveal: reveal                         # after Player 2: reveal the tally
       reveal:
         transitions: { game_over: game_over }
       game_over: {}
@@ -278,9 +288,8 @@ lighting:
     three_strikes:   "/live/Control_Panel/cue/Three_Strikes/activate"
     steal_correct:   "/live/Control_Panel/cue/Steal_Win/activate"
     steal_incorrect: "/live/Control_Panel/cue/Board_Reveal/activate"
-    player1_turn:    "/live/Control_Panel/cue/SpeedRound_P1/activate"
-    player1_done:    "/live/Control_Panel/cue/SpeedRound_TimeUp/activate"
-    player2_turn:    "/live/Control_Panel/cue/SpeedRound_P2/activate"
+    turn:            "/live/Control_Panel/cue/SpeedRound_Play/activate"
+    time_up:         "/live/Control_Panel/cue/SpeedRound_TimeUp/activate"
     reveal:          "/live/Control_Panel/cue/Board_Reveal/activate"
     round_start:     "/live/Control_Panel/cue/Round_Start/activate"
     game_over:       "/live/Control_Panel/cue/Winner_Reveal/activate"
@@ -312,13 +321,9 @@ audio:
       effect: "music/FamilyFeud_Board_Reveal.mp3"
     reveal:
       effect: "music/FamilyFeud_Board_Reveal.mp3"
-    player1_turn:
+    turn:
       background: "music/FamilyFeud_SpeedRound_Tick.mp3"
-    player1_done:
-      effect: "music/FamilyFeud_SpeedRound_TimeUp.mp3"
-    player2_turn:
-      background: "music/FamilyFeud_SpeedRound_Tick.mp3"
-    player2_done:
+    time_up:
       effect: "music/FamilyFeud_SpeedRound_TimeUp.mp3"
     round_start:
       effect: "music/FamilyFeud_Round_Start.mp3"
@@ -340,9 +345,7 @@ obs:
     three_strikes:   "Three_Strikes"
     steal_correct:   "Steal_Win"
     steal_incorrect: "Board_Reveal"
-    player1_turn:    "SpeedRound_Player1"
-    player1_done:    "SpeedRound_Player1_Done"
-    player2_turn:    "SpeedRound_Player2"
+    time_up:         "SpeedRound_TimeUp"
     reveal:          "SpeedRound_Reveal"
     round_start:     "Round_Start"
     game_over:       "Game_Over"
@@ -568,8 +571,8 @@ control_surface:
               color: "#223344"
             button_5:
               type: scene_goto
-              label: "Speed Rnd"
-              target: "Speed Round"
+              label: "Spd P1"
+              target: "Speed Round - Player 1"
               color: "#332244"
             button_6:
               type: scene_goto
@@ -581,6 +584,18 @@ control_surface:
               label: "Game Over"
               state: game_over
               color: "#552222"
+            button_12:
+              type: scene_goto
+              label: "Spd P2"
+              target: "Speed Round - Player 2"
+              color: "#332244"
+            button_13:
+              type: state
+              label: "Reveal"
+              state: reveal
+              color: "#1a2a44"
+              fa_icon: "eye"
+              fa_size: 26
             # Timer sub-page
             button_8:
               type: page
