@@ -533,3 +533,12 @@ def load_config(path: str) -> tuple[dict, AppConfig]:
     with open(path) as f:
         raw = yaml.safe_load(f)
     return raw, parse_config(raw)
+
+
+def load_show(path: str, service_raw: dict) -> tuple[dict, AppConfig]:
+    """Load a show YAML file, injecting ``service_raw`` so the root config's
+    service settings always take precedence over anything the show file declares."""
+    with open(path) as f:
+        raw = yaml.safe_load(f)
+    raw["service"] = service_raw
+    return raw, parse_config(raw)

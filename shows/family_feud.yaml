@@ -1,0 +1,720 @@
+# Family Feud show file
+#
+# Structure: Intro → 4 × (Face-Off → Round) → Speed Round → Outro
+#
+# Two "players" represent the two competing families for buzz-in moments
+# (Face-Off and Steal). The host drives all round play using Correct / Strike.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  TouchOSC control surface — OSC address reference
+#  Service listens on osc_server_port (default 21601); feedback goes to
+#  touchosc_host:touchosc_port (set in config.yaml or config.example.yaml).
+#
+#  INCOMING commands (TouchOSC → server):
+#   /buzzer/correct              mark the current answer as correct
+#   /buzzer/incorrect            mark a strike / wrong answer
+#   /buzzer/clear                reset buzzers to idle
+#   /buzzer/allow_next           open buzzers (second-chance after strike)
+#   /buzzer/round_start          cue the round-start animation
+#   /buzzer/game_over            end the game
+#   /show/advance                advance to next scene
+#   /show/previous               go back to previous scene
+#   /show/goto  <name|index>     jump to a named scene or numeric index
+#   /audio/background/play <f>   start background music file
+#   /audio/background/stop       stop background music
+#   /audio/background/pause      pause background music
+#   /audio/background/resume     resume background music
+#   /audio/effect/play  <f>      fire a one-shot sound effect
+#   /audio/effect/stop           stop current sound effect
+#   /config/reload <file>        hot-reload a show file from shows/
+#   /config/list                 emit a list of available show files
+#
+#  OUTGOING feedback (server → TouchOSC):
+#   /feedback/state  <name>             current state machine state
+#   /feedback/scene  "<idx>: <name>"    active scene
+#   /feedback/player "<id>: <name>"     player currently locked in (buzz)
+#   /feedback/score/<player_id> <val>   score for a player
+#   /feedback/counter/strikes <0-3>     live strike count during a round
+#   /feedback/award <val>               current question award value
+#   /feedback/show/name <str>           show name on config reload
+#   /feedback/timed_lockout/duration    duration of a timed lockout
+#
+#  Recommended TouchOSC layout elements:
+#   - Label bound to /feedback/state     — shows current game state
+#   - Label bound to /feedback/scene     — shows active scene
+#   - Label bound to /feedback/player    — shows who buzzed in
+#   - Label bound to /feedback/counter/strikes — strike counter (0–3)
+#   - Buttons for /buzzer/correct, /buzzer/incorrect, /buzzer/clear
+#   - Buttons for /show/advance, /show/previous
+#   - Fader for /audio/background/volume <0.0–1.0>
+# ─────────────────────────────────────────────────────────────────────────────
+
+show:
+  name: "Family Feud"
+  description: >
+    Two families compete to name the most popular survey answers.
+    4 rounds (each with a Face-Off) plus a Speed Round finale.
+  scenes:
+    - name: "Intro"
+      on_enter:
+        audio_background: "music/FamilyFeud_Theme.mp3"
+        obs_scene: "FamilyFeud_Intro"
+        lighting: "/live/Control_Panel/cue/Intro_Sweep/activate"
+      buzzers:
+        all_enabled: false
+
+    # ── Round 1 ──────────────────────────────────────────────────────────────
+    - name: "Round 1 Face-Off"
+      on_enter:
+        audio_background: "music/FamilyFeud_FaceOff_Sting.mp3"
+        obs_scene: "FaceOff_Ready"
+        lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+      state_machine: faceoff
+      buzzers:
+        buzz_timeout_seconds: null    # no time limit on a face-off answer
+
+    - name: "Round 1"
+      on_enter:
+        audio_background: "music/FamilyFeud_Round_Start.mp3"
+        obs_scene: "Round_Board"
+        lighting: "/live/Control_Panel/cue/Round_Play/activate"
+      state_machine: playing
+
+    # ── Round 2 ──────────────────────────────────────────────────────────────
+    - name: "Round 2 Face-Off"
+      on_enter:
+        audio_background: "music/FamilyFeud_FaceOff_Sting.mp3"
+        obs_scene: "FaceOff_Ready"
+        lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+      state_machine: faceoff
+      buzzers:
+        buzz_timeout_seconds: null
+
+    - name: "Round 2"
+      on_enter:
+        audio_background: "music/FamilyFeud_Round_Start.mp3"
+        obs_scene: "Round_Board"
+        lighting: "/live/Control_Panel/cue/Round_Play/activate"
+      state_machine: playing
+
+    # ── Round 3 ──────────────────────────────────────────────────────────────
+    - name: "Round 3 Face-Off"
+      on_enter:
+        audio_background: "music/FamilyFeud_FaceOff_Sting.mp3"
+        obs_scene: "FaceOff_Ready"
+        lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+      state_machine: faceoff
+      buzzers:
+        buzz_timeout_seconds: null
+
+    - name: "Round 3"
+      on_enter:
+        audio_background: "music/FamilyFeud_Round_Start.mp3"
+        obs_scene: "Round_Board"
+        lighting: "/live/Control_Panel/cue/Round_Play/activate"
+      state_machine: playing
+
+    # ── Round 4 (Sudden Death) ────────────────────────────────────────────────
+    - name: "Round 4 Face-Off"
+      on_enter:
+        audio_background: "music/FamilyFeud_FaceOff_Sting.mp3"
+        obs_scene: "FaceOff_Ready"
+        lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+      state_machine: faceoff
+      buzzers:
+        buzz_timeout_seconds: null
+
+    - name: "Round 4"
+      on_enter:
+        audio_background: "music/FamilyFeud_Round_Start.mp3"
+        obs_scene: "Round_Board"
+        lighting: "/live/Control_Panel/cue/Round_Play/activate"
+      state_machine: playing
+
+    # ── Speed Round ────────────────────────────────────────────────────────────
+    # Player 1 answers 5 questions in 25 s, then Player 2 answers the same 5.
+    # buzz_timeout_seconds drives the countdown; buzzers are disabled (no buzz-in).
+    - name: "Speed Round"
+      on_enter:
+        audio_background: "music/FamilyFeud_SpeedRound_Intro.mp3"
+        obs_scene: "SpeedRound_Ready"
+        lighting: "/live/Control_Panel/cue/SpeedRound_Ready/activate"
+      state_machine: speed_round
+      buzzers:
+        buzz_timeout_seconds: 25.0
+        all_enabled: false
+
+    - name: "Outro"
+      on_enter:
+        audio_background: "music/FamilyFeud_Winner_Celebration.mp3"
+        obs_scene: "FamilyFeud_Outro"
+        lighting: "/live/Control_Panel/cue/Winner_Celebration/activate"
+      buzzers:
+        all_enabled: false
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Buzzers
+# ─────────────────────────────────────────────────────────────────────────────
+buzzers:
+  buzz_timeout_seconds: 10.0      # default; overridden per scene
+  players:
+    - { id: 1, name: "Family A", key: "1", enabled: true }
+    - { id: 2, name: "Family B", key: "2", enabled: true }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  State machine library
+# ─────────────────────────────────────────────────────────────────────────────
+state_machine: faceoff    # default; each scene overrides as needed
+
+state_machines:
+
+  # ── Face-Off ───────────────────────────────────────────────────────────────
+  # One player per family buzzes in. The first to give the top answer wins
+  # control for their family. If wrong, the opposing family gets one attempt.
+  faceoff:
+    initial: idle
+    global:
+      clear:       { to: idle,      do: [clear_bans, clear_player] }
+      game_over:   { to: game_over, do: [clear_bans, clear_player] }
+      round_start: round_start
+    states:
+      idle:
+        transitions: { buzz: locked }
+      locked:
+        transitions:
+          correct:    faceoff_win                               # top answer — family plays
+          incorrect:  { to: incorrect, do: [ban_current] }     # wrong — other family tries
+          allow_next:
+            to: allow_next
+            do: [ban_current, clear_player]
+            when_all_banned: idle
+      faceoff_win:  { hold: 2.0, then: idle }                  # host advances scene
+      incorrect:
+        hold: 2.0
+        then: { to: allow_next, do: [clear_player], when_all_banned: idle }
+      allow_next:   { transitions: { buzz: locked } }
+      round_start:  { hold: 2.0, then: idle }
+      game_over:    {}
+
+  # ── Playing round ──────────────────────────────────────────────────────────
+  # The controlling family answers one at a time; the host marks each Correct
+  # or Strike. Three strikes hands control to the other family for one steal
+  # attempt. The host presses Correct or Strike to resolve the steal.
+  playing:
+    initial: idle
+    counters:
+      strikes:
+        initial: 0
+        max: 3
+    global:
+      clear:
+        to: idle
+        do: [clear_bans, clear_player, { reset: strikes }]
+      game_over:   { to: game_over }
+      round_start: round_start
+    states:
+      idle:
+        transitions:
+          correct:   correct
+          incorrect:
+            to: incorrect
+            do: [{ increment: strikes }]
+            when_counter_at: { counter: strikes, value: 3, to: three_strikes }
+      correct:        { hold: 1.5, then: idle }
+      incorrect:      { hold: 1.5, then: idle }
+      three_strikes:                            # other family huddles for a steal
+        transitions:
+          correct:   steal_correct
+          incorrect: steal_incorrect
+      steal_correct:  { hold: 2.0, then: idle }
+      steal_incorrect: { hold: 2.0, then: idle }
+      round_start:    { hold: 2.0, then: idle }
+      game_over:      {}
+
+  # ── Speed Round ────────────────────────────────────────────────────────────
+  # Host triggers round_start to begin Player 1's 25-second turn (driven by
+  # buzz_timeout_seconds on the Speed Round scene). When the clock expires,
+  # Player 2's 25-second turn begins automatically. After both turns the reveal
+  # state holds until the host fires game_over.
+  speed_round:
+    initial: idle
+    global:
+      clear:     { to: idle }
+      game_over: { to: game_over }
+    states:
+      idle:
+        transitions: { round_start: player1_turn }
+      player1_turn:
+        behaviors: [countdown]                   # starts 25 s timer
+        transitions:
+          countdown_expire: player1_done
+      player1_done:
+        hold: 3.0
+        then: player2_turn
+      player2_turn:
+        behaviors: [countdown]                   # starts another 25 s timer
+        transitions:
+          countdown_expire: reveal
+      reveal:
+        transitions: { game_over: game_over }
+      game_over: {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Lighting  (OSC → DMX controller)
+# ─────────────────────────────────────────────────────────────────────────────
+lighting:
+  states:
+    idle:            "/live/Control_Panel/cue/Game/activate"
+    locked:          "/live/Control_Panel/cue/FaceOff_Buzz/activate"
+    player_1_buzz:   "/live/Control_Panel/cue/Buzz_Left/activate"
+    player_2_buzz:   "/live/Control_Panel/cue/Buzz_Right/activate"
+    faceoff_win:     "/live/Control_Panel/cue/FaceOff_Win/activate"
+    allow_next:      "/live/*/cue/*/deactivate 0"
+    correct:         "/live/Control_Panel/cue/Correct_Answer/activate"
+    incorrect:       "/live/Control_Panel/cue/Strike/activate"
+    three_strikes:   "/live/Control_Panel/cue/Three_Strikes/activate"
+    steal_correct:   "/live/Control_Panel/cue/Steal_Win/activate"
+    steal_incorrect: "/live/Control_Panel/cue/Board_Reveal/activate"
+    player1_turn:    "/live/Control_Panel/cue/SpeedRound_P1/activate"
+    player1_done:    "/live/Control_Panel/cue/SpeedRound_TimeUp/activate"
+    player2_turn:    "/live/Control_Panel/cue/SpeedRound_P2/activate"
+    reveal:          "/live/Control_Panel/cue/Board_Reveal/activate"
+    round_start:     "/live/Control_Panel/cue/Round_Start/activate"
+    game_over:       "/live/Control_Panel/cue/Winner_Reveal/activate"
+    clear:           "/live/*/cue/*/deactivate 0"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Audio
+# ─────────────────────────────────────────────────────────────────────────────
+audio:
+  default_background_volume: 0.7
+  default_effect_volume: 1.0
+  states:
+    player_1_buzz:
+      effect: "music/FamilyFeud_FaceOff_Buzz.mp3"
+    player_2_buzz:
+      effect: "music/FamilyFeud_FaceOff_Buzz.mp3"
+    faceoff_win:
+      effect: "music/FamilyFeud_FaceOff_Win.mp3"
+    correct:
+      effect: "music/FamilyFeud_Answer_Reveal.mp3"
+    incorrect:
+      effect: "music/FamilyFeud_Strike_Buzz.mp3"
+    three_strikes:
+      effect: "music/FamilyFeud_Three_Strikes.mp3"
+    steal_correct:
+      effect: "music/FamilyFeud_Steal_Win.mp3"
+    steal_incorrect:
+      effect: "music/FamilyFeud_Board_Reveal.mp3"
+    reveal:
+      effect: "music/FamilyFeud_Board_Reveal.mp3"
+    player1_turn:
+      background: "music/FamilyFeud_SpeedRound_Tick.mp3"
+    player1_done:
+      effect: "music/FamilyFeud_SpeedRound_TimeUp.mp3"
+    player2_turn:
+      background: "music/FamilyFeud_SpeedRound_Tick.mp3"
+    player2_done:
+      effect: "music/FamilyFeud_SpeedRound_TimeUp.mp3"
+    round_start:
+      effect: "music/FamilyFeud_Round_Start.mp3"
+    game_over:
+      background: "music/FamilyFeud_Winner_Celebration.mp3"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  OBS
+# ─────────────────────────────────────────────────────────────────────────────
+obs:
+  states:
+    idle:            "Game_Idle"
+    locked:          "FaceOff_Buzz"
+    faceoff_win:     "FaceOff_Win"
+    allow_next:      "FaceOff_Ready"
+    correct:         "Answer_Reveal"
+    incorrect:       "Strike_Display"
+    three_strikes:   "Three_Strikes"
+    steal_correct:   "Steal_Win"
+    steal_incorrect: "Board_Reveal"
+    player1_turn:    "SpeedRound_Player1"
+    player1_done:    "SpeedRound_Player1_Done"
+    player2_turn:    "SpeedRound_Player2"
+    reveal:          "SpeedRound_Reveal"
+    round_start:     "Round_Start"
+    game_over:       "Game_Over"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Stream Deck control surface  (Elgato MK.2 / Original, 3 × 5, keys 0–14)
+#
+#  Layout:
+#    [0 Reset]   [1 Fam A]   [2 Fam B]   [3 Open Buzz]  [4 Rnd Start]
+#    [5 Correct] [6 Strike]  [7 3×Strike] [8 Timer]     [9 State]
+#    [10 ←Scene] [11 Scene]  [12 Scene→]  [13 Sounds]   [14 More]
+# ─────────────────────────────────────────────────────────────────────────────
+control_surface:
+  enabled: true
+  brightness: 100
+  label_align: center
+  label_wrap: true
+  fa_path: "node_modules/@fortawesome/fontawesome-pro"
+  fa_type: pro
+  fa_weight: solid
+
+  root:
+    buttons:
+      # ── Row 1: buzz controls ────────────────────────────────────────────────
+      button_0:
+        type: reset_buzzer
+        label: "Reset"
+        color: "#552222"
+        fa_icon: "rotate-left"
+        fa_size: 28
+        fa_color: "#ffaaaa"
+
+      button_1:
+        type: buzz
+        label: "Fam A"
+        player_id: 1
+        color: "#1a3a6e"
+        fa_icon: "users"
+        fa_size: 26
+        label_align: bottom
+        pressed:
+          color: "#2255cc"
+          fa_color: "#ffffff"
+
+      button_2:
+        type: buzz
+        label: "Fam B"
+        player_id: 2
+        color: "#6e1a1a"
+        fa_icon: "users"
+        fa_size: 26
+        label_align: bottom
+        pressed:
+          color: "#cc2222"
+          fa_color: "#ffffff"
+
+      button_3:
+        type: state
+        label: "Open Buzz"
+        state: allow_next
+        color: "#2a2a00"
+        fa_icon: "lock-open"
+        fa_size: 26
+        label_align: bottom
+
+      button_4:
+        type: state
+        label: "Rnd Start"
+        state: round_start
+        color: "#003344"
+        fa_icon: "play"
+        fa_size: 26
+        label_align: bottom
+
+      # ── Row 2: host judgement ────────────────────────────────────────────────
+      button_5:
+        type: state
+        label: "Correct"
+        state: correct
+        color: "#004400"
+        fa_icon: "check"
+        fa_size: 38
+        fa_color: "#00ff88"
+        pressed:
+          color: "#006600"
+
+      button_6:
+        type: state
+        label: "Strike"
+        state: incorrect
+        color: "#880000"
+        fa_icon: "xmark"
+        fa_size: 44
+        fa_color: "#ffffff"
+        pressed:
+          color: "#cc0000"
+
+      button_7:
+        type: state
+        label: "3 Strikes"
+        state: three_strikes
+        color: "#662200"
+        fa_icon: "triangle-exclamation"
+        fa_size: 30
+        fa_color: "#ff8800"
+        label_align: bottom
+
+      button_8:
+        type: countdown
+        action: display
+        label: "Timer"
+
+      button_9:
+        type: state_display
+        label: "State"
+
+      # ── Row 3: navigation & pages ────────────────────────────────────────────
+      button_10:
+        type: scene_previous
+        fa_icon: "caret-large-left"
+        fa_size: 52
+
+      button_11:
+        type: scene_current
+        label: "Scene"
+
+      button_12:
+        type: scene_advance
+        fa_icon: "caret-large-right"
+        fa_size: 52
+
+      button_13:
+        type: page
+        label: "Sounds"
+        fa_icon: "music"
+        fa_size: 28
+        color: "#1a2233"
+        page:
+          buttons:
+            button_0:
+              type: sound
+              label: "Theme"
+              path: "music/FamilyFeud_Theme.mp3"
+            button_1:
+              type: sound
+              label: "Face-Off"
+              path: "music/FamilyFeud_FaceOff_Sting.mp3"
+            button_2:
+              type: sound
+              label: "Buzz In"
+              path: "music/FamilyFeud_FaceOff_Buzz.mp3"
+            button_3:
+              type: sound
+              label: "Answer!"
+              path: "music/FamilyFeud_Answer_Reveal.mp3"
+            button_4:
+              type: sound
+              label: "Strike!"
+              path: "music/FamilyFeud_Strike_Buzz.mp3"
+              color: "#440000"
+            button_5:
+              type: sound
+              label: "3 Strikes"
+              path: "music/FamilyFeud_Three_Strikes.mp3"
+              color: "#442200"
+            button_6:
+              type: sound
+              label: "Steal Win"
+              path: "music/FamilyFeud_Steal_Win.mp3"
+              color: "#004422"
+            button_7:
+              type: sound
+              label: "Reveal"
+              path: "music/FamilyFeud_Board_Reveal.mp3"
+            button_8:
+              type: sound
+              label: "Speed Rnd"
+              path: "music/FamilyFeud_SpeedRound_Intro.mp3"
+            button_9:
+              type: sound
+              label: "Winner!"
+              path: "music/FamilyFeud_Winner_Celebration.mp3"
+              color: "#223300"
+            button_11:
+              type: stop_sounds
+              label: "Stop All"
+              color: "#552222"
+
+      button_14:
+        type: page
+        label: "More"
+        fa_icon: "ellipsis"
+        fa_size: 28
+        color: "#222233"
+        page:
+          buttons:
+            # Scene jump shortcuts
+            button_0:
+              type: scene_goto
+              label: "Intro"
+              target: "Intro"
+              color: "#222244"
+            button_1:
+              type: scene_goto
+              label: "Rnd 1 FO"
+              target: "Round 1 Face-Off"
+              color: "#223344"
+            button_2:
+              type: scene_goto
+              label: "Rnd 2 FO"
+              target: "Round 2 Face-Off"
+              color: "#223344"
+            button_3:
+              type: scene_goto
+              label: "Rnd 3 FO"
+              target: "Round 3 Face-Off"
+              color: "#223344"
+            button_4:
+              type: scene_goto
+              label: "Rnd 4 FO"
+              target: "Round 4 Face-Off"
+              color: "#223344"
+            button_5:
+              type: scene_goto
+              label: "Speed Rnd"
+              target: "Speed Round"
+              color: "#332244"
+            button_6:
+              type: scene_goto
+              label: "Outro"
+              target: "Outro"
+              color: "#224422"
+            button_7:
+              type: state
+              label: "Game Over"
+              state: game_over
+              color: "#552222"
+            # Timer sub-page
+            button_8:
+              type: page
+              label: "Timer"
+              fa_icon: "stopwatch"
+              fa_size: 26
+              color: "#223322"
+              page:
+                buttons:
+                  button_0:
+                    type: countdown
+                    action: display
+                    label: "Timer"
+                  button_1:
+                    type: countdown
+                    action: toggle
+                    label: "Start/Stop"
+                  button_2:
+                    type: countdown
+                    action: pause
+                    label: "Pause"
+                  button_3:
+                    type: countdown
+                    action: resume
+                    label: "Resume"
+                  button_4:
+                    type: countdown
+                    action: reset
+                    label: "Reset"
+                  button_5:
+                    type: countdown
+                    action: cancel
+                    label: "Cancel"
+                    color: "#552222"
+            # OBS sub-page
+            button_9:
+              type: page
+              label: "OBS"
+              fa_icon: "video"
+              fa_size: 26
+              color: "#332211"
+              page:
+                buttons:
+                  button_0:
+                    type: obs_scene
+                    label: "Intro"
+                    scene: "FamilyFeud_Intro"
+                  button_1:
+                    type: obs_scene
+                    label: "Face-Off"
+                    scene: "FaceOff_Ready"
+                  button_2:
+                    type: obs_scene
+                    label: "FO Buzz"
+                    scene: "FaceOff_Buzz"
+                  button_3:
+                    type: obs_scene
+                    label: "Board"
+                    scene: "Round_Board"
+                  button_4:
+                    type: obs_scene
+                    label: "3 Strikes"
+                    scene: "Three_Strikes"
+                  button_5:
+                    type: obs_scene
+                    label: "Spd Rnd P1"
+                    scene: "SpeedRound_Player1"
+                  button_6:
+                    type: obs_scene
+                    label: "Spd Rnd P2"
+                    scene: "SpeedRound_Player2"
+                  button_7:
+                    type: obs_scene
+                    label: "Reveal"
+                    scene: "SpeedRound_Reveal"
+                  button_8:
+                    type: obs_scene
+                    label: "Game Over"
+                    scene: "Game_Over"
+                  button_9:
+                    type: obs_scene
+                    label: "Outro"
+                    scene: "FamilyFeud_Outro"
+            # Lights sub-page
+            button_11:
+              type: page
+              label: "Lights"
+              fa_icon: "lightbulb"
+              fa_size: 26
+              color: "#332200"
+              page:
+                buttons:
+                  button_0:
+                    type: lighting
+                    label: "Game"
+                    osc: "/live/Control_Panel/cue/Game/activate"
+                  button_1:
+                    type: lighting
+                    label: "FaceOff"
+                    osc: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+                  button_2:
+                    type: lighting
+                    label: "Correct"
+                    osc: "/live/Control_Panel/cue/Correct_Answer/activate"
+                    color: "#004400"
+                  button_3:
+                    type: lighting
+                    label: "Strike"
+                    osc: "/live/Control_Panel/cue/Strike/activate"
+                    color: "#440000"
+                  button_4:
+                    type: lighting
+                    label: "3 Strikes"
+                    osc: "/live/Control_Panel/cue/Three_Strikes/activate"
+                    color: "#442200"
+                  button_5:
+                    type: lighting
+                    label: "Steal"
+                    osc: "/live/Control_Panel/cue/FaceOff_Buzz/activate"
+                  button_6:
+                    type: lighting
+                    label: "Reveal"
+                    osc: "/live/Control_Panel/cue/Board_Reveal/activate"
+                  button_7:
+                    type: lighting
+                    label: "Speed Rnd"
+                    osc: "/live/Control_Panel/cue/SpeedRound_P1/activate"
+                  button_8:
+                    type: lighting
+                    label: "Winner"
+                    osc: "/live/Control_Panel/cue/Winner_Reveal/activate"
+                    color: "#332200"
+                  button_9:
+                    type: lighting
+                    label: "Clear All"
+                    osc: "/live/*/cue/*/deactivate 0"
+                    color: "#332222"

@@ -14,17 +14,6 @@ show:
         all_enabled: false
     - name: "Round 1"
 
-service:
-  osc_server_host: "0.0.0.0"
-  osc_server_port: 21601
-  dmx_osc_host: "10.11.0.103"
-  dmx_osc_port: 21600
-  obs_host: "10.11.0.103"
-  obs_port: 4455
-  obs_password: ""
-  touchosc_host: ""
-  touchosc_port: 9000
-
 buzzers:
   buzz_timeout_seconds: 10.0
   players:

@@ -2,7 +2,8 @@ import asyncio
 import logging
 import os
 import signal
-from gameshow.config import load_config
+import yaml
+from gameshow.config import load_show
 from gameshow.bus import EventBus
 from gameshow.state_machine import StateMachine
 from gameshow.scene_manager import SceneManager
@@ -33,10 +34,15 @@ def resolve_show_path(arg: str) -> str:
 
 
 async def main() -> None:
-    base_raw, base_config = load_config(CONFIG_PATH)
+    with open(CONFIG_PATH) as f:
+        root_raw = yaml.safe_load(f) or {}
+    service_raw = root_raw.get("service", {})
+    default_show = root_raw.get("default_show", "default.yaml")
+    show_path = resolve_show_path(default_show)
+    base_raw, base_config = load_show(show_path, service_raw)
     bus = EventBus()
 
-    scene_manager = SceneManager(bus, base_raw, base_config, CONFIG_PATH)
+    scene_manager = SceneManager(bus, base_raw, base_config, show_path, service_raw)
     def config_fn():
         return scene_manager.current_config
 

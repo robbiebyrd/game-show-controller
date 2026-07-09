@@ -4,7 +4,7 @@ from typing import Optional
 import yaml
 from gameshow.bus import EventBus
 from gameshow.config import (
-    AppConfig, SceneConfig, parse_config, apply_scene_override, load_config,
+    AppConfig, SceneConfig, parse_config, apply_scene_override, load_show,
 )
 from gameshow.events import SceneChanged
 
@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 class SceneManager:
     def __init__(self, bus: EventBus, base_raw: dict, base_config: AppConfig,
-                 config_path: str) -> None:
+                 config_path: str, service_raw: dict | None = None) -> None:
         self._bus = bus
         self._base_raw = base_raw
         self._base_config = base_config
@@ -21,15 +21,16 @@ class SceneManager:
         self.current_index: int = 0  # 0 = no scene selected
         self._scenes: list[SceneConfig] = base_config.scenes
         self.current_config: AppConfig = base_config
+        self._service_raw = service_raw or {}
 
     def reload(self, path: str) -> bool:
-        """Hot-load a new config file, resetting to a clean (no-scene) state.
+        """Hot-load a new show file, resetting to a clean (no-scene) state.
 
         On any load/parse failure the current config is kept untouched and
         ``False`` is returned, so a bad file can never take the service down.
         """
         try:
-            base_raw, base_config = load_config(path)
+            base_raw, base_config = load_show(path, self._service_raw)
         except (OSError, ValueError, yaml.YAMLError) as exc:
             log.error("Config reload from %s failed; keeping current config (%s)", path, exc)
             return False
