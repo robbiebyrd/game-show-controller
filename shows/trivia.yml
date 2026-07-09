@@ -4,15 +4,73 @@
 # A show file is a COMPLETE config — reloading replaces the whole active config.
 # Only show content is applied live; network settings (OSC listen port, DMX
 # target, OBS connection) keep the running service's startup values.
+#
+# Structure: Intro → Round 1 → Round 2 → Final Jeopardy Question →
+#            Final Jeopardy → Outro
+#
+# A straight buzz-in trivia game (no scoring): players race to buzz, the host
+# marks each answer Correct or Wrong. Round 1 and Round 2 share the buzz-timeout
+# machine. Final Jeopardy drops buzzing entirely for a single dramatic question
+# on a 30-second think clock the host starts and the players answer against.
 
 show:
   name: "Trivia Night"
   description: "The house trivia showdown"
   scenes:
     - name: "Intro"
+      on_enter:
+        audio_background: "music/Trivia_Theme.mp3"
+        obs_scene: "Trivia_Intro"
+        lighting: "/palette/Intro/activate"
       buzzers:
         all_enabled: false
+
     - name: "Round 1"
+      on_enter:
+        obs_scene: "Trivia_Round1_Board"
+        lighting: "/palette/Idle/activate"
+      # uses the default `buzz_timeout` machine
+
+    - name: "Round 2"
+      on_enter:
+        obs_scene: "Trivia_Round2_Board"
+        lighting: "/palette/Idle/activate"
+      # same buzz-in play as Round 1 — a second set of questions
+
+    # ── Final Jeopardy Question ──────────────────────────────────────────────
+    # A held reveal beat: on entry it fires a light cue and a sound bed so the
+    # host can read the final question over them. No buzzing, no clock — sits
+    # idle until the host advances to the Final Jeopardy scene to start the
+    # think clock.
+    - name: "Final Jeopardy Question"
+      on_enter:
+        audio_background: "music/Trivia_Final_Question.mp3"
+        obs_scene: "Trivia_Final_Category"
+        lighting: "/palette/FinalCategory/activate"
+      state_machine: final_jeopardy
+      buzzers:
+        all_enabled: false
+
+    # ── Final Jeopardy ─────────────────────────────────────────────────────────
+    # No buzzing: every player answers the same question at once. The host cues
+    # round_start to begin the 30-second think clock (buzz_timeout_seconds drives
+    # it); when it expires — or the host presses Reveal — the answer is shown.
+    - name: "Final Jeopardy"
+      on_enter:
+        obs_scene: "Trivia_Final"
+        lighting: "/palette/FinalThink/activate"
+      state_machine: final_jeopardy
+      buzzers:
+        buzz_timeout_seconds: 30.0    # the think clock
+        all_enabled: false
+
+    - name: "Outro"
+      on_enter:
+        audio_background: "music/Trivia_Outro.mp3"
+        obs_scene: "Trivia_Outro"
+        lighting: "/palette/GameOver/activate"
+      buzzers:
+        all_enabled: false
 
 buzzers:
   buzz_timeout_seconds: 10.0
@@ -22,55 +80,410 @@ buzzers:
     - { id: 3, name: "P3", key: "3", enabled: true }
     - { id: 4, name: "P4", key: "4", enabled: true }
 
-state_machine:
-  initial: idle
-  global:
-    clear: { to: idle, do: [clear_bans, clear_player] }
-    game_over: { to: game_over, do: [clear_bans, clear_player] }
-    round_start: round_start
-  states:
-    idle:
-      transitions: { buzz: locked }
-    locked:
-      behaviors: [countdown]
-      transitions:
-        countdown_expire: buzz_timeout
-        correct: correct
-        incorrect: { to: incorrect, do: [ban_current] }
-        allow_next: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle }
-    correct: { hold: 2.0, then: idle }
-    incorrect: { hold: 2.0, then: idle, transitions: { buzz: locked } }
-    allow_next: { transitions: { buzz: locked } }
-    buzz_timeout: { hold: 3.0, then: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle } }
-    round_start: { hold: 2.0, then: idle }
-    game_over: {}
+# The active machine is chosen by name from the `state_machines` library below;
+# a scene may reference a different one (Final Jeopardy does).
+state_machine: buzz_timeout
+
+state_machines:
+
+  # ── Buzz-in round play ───────────────────────────────────────────────────────
+  # A locked player holds the buzzers until their timer runs out. Wrong answers
+  # ban that player and reopen to the rest; when everyone is banned it resets.
+  buzz_timeout:
+    initial: idle
+    global:
+      clear:       { to: idle,      do: [clear_bans, clear_player] }
+      game_over:   { to: game_over, do: [clear_bans, clear_player] }
+      round_start: round_start
+    states:
+      idle:
+        transitions: { buzz: locked }
+      locked:
+        behaviors: [countdown]
+        transitions:
+          countdown_expire: buzz_timeout
+          correct: correct
+          incorrect: { to: incorrect, do: [ban_current] }
+          allow_next: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle }
+      correct: { hold: 2.0, then: idle }
+      incorrect: { hold: 2.0, then: idle, transitions: { buzz: locked } }
+      allow_next: { transitions: { buzz: locked } }
+      buzz_timeout: { hold: 3.0, then: { to: allow_next, do: [ban_current, clear_player], when_all_banned: idle } }
+      round_start: { hold: 2.0, then: idle }
+      game_over: {}
+
+  # ── Final Jeopardy ─────────────────────────────────────────────────────────
+  # No buzzers. The host cues round_start to run the 30-second think clock, then
+  # the answer is revealed (automatically when the clock expires, or early via
+  # the time_up trigger). round_start re-runs the clock; clear resets to idle.
+  final_jeopardy:
+    initial: idle
+    global:
+      clear:     { to: idle }
+      game_over: { to: game_over }
+    states:
+      idle:
+        transitions: { round_start: thinking }
+      thinking:
+        behaviors: [countdown]
+        transitions:
+          countdown_expire: reveal
+          time_up: reveal            # host stops the clock early
+      reveal:
+        transitions: { round_start: thinking }
+      game_over: {}
 
 lighting:
   states:
-    idle: "/palette/Idle/activate"
-    locked: "/palette/Locked/activate"
+    idle:          "/palette/Idle/activate"
+    locked:        "/palette/Locked/activate"
+    correct:       "/palette/Correct/activate"
+    incorrect:     "/palette/Incorrect/activate"
+    allow_next:    "/palette/Idle/activate"
+    buzz_timeout:  "/palette/Timeout/activate"
+    round_start:   "/palette/RoundStart/activate"
+    thinking:      "/palette/FinalThink/activate"
+    reveal:        "/palette/Reveal/activate"
+    game_over:     "/palette/GameOver/activate"
+    clear:         "/palette/Idle/activate"
+    player_1_buzz: "/palette/Buzz_P1/activate"
+    player_2_buzz: "/palette/Buzz_P2/activate"
+    player_3_buzz: "/palette/Buzz_P3/activate"
+    player_4_buzz: "/palette/Buzz_P4/activate"
 
 audio:
   default_background_volume: 0.7
   default_effect_volume: 1.0
-  states: {}
+  states:
+    player_1_buzz:
+      effect: "music/Trivia_Buzz_P1.mp3"
+    player_2_buzz:
+      effect: "music/Trivia_Buzz_P2.mp3"
+    player_3_buzz:
+      effect: "music/Trivia_Buzz_P3.mp3"
+    player_4_buzz:
+      effect: "music/Trivia_Buzz_P4.mp3"
+    correct:
+      effect: "music/Trivia_Correct.mp3"
+    incorrect:
+      effect: "music/Trivia_Wrong.mp3"
+    buzz_timeout:
+      effect: "music/Trivia_Timeout.mp3"
+    round_start:
+      background: "music/Trivia_Round_Start.mp3"
+    thinking:
+      background: "music/Trivia_Final_Think.mp3"        # the think-clock bed
+    reveal:
+      effect: "music/Trivia_Final_Reveal.mp3"
+    game_over:
+      background: "music/Trivia_Game_Over.mp3"
 
 obs:
   states:
-    idle: "Idle"
+    idle:          "Idle"
+    locked:        "Buzz_Locked"
+    correct:       "Correct"
+    incorrect:     "Incorrect"
+    allow_next:    "Allow_Next"
+    buzz_timeout:  "Buzz_Timeout"
+    round_start:   "Round_Start"
+    thinking:      "Final_Think"
+    reveal:        "Final_Reveal"
+    game_over:     "Game_Over"
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Stream Deck control surface  (Elgato MK.2 / Original, 3 × 5, keys 0–14)
+#
+#  Root layout:
+#    [0 Reset]   [1 P1]      [2 P2]      [3 P3]      [4 P4]
+#    [5 Correct] [6 Wrong]   [7 Open]    [8 Timer]   [9 State]
+#    [10 ←Scene] [11 Scene]  [12 Scene→] [13 Sounds] [14 More]
+# ─────────────────────────────────────────────────────────────────────────────
 control_surface:
   enabled: true
   brightness: 60
+  label_align: center
+  label_wrap: true
+  fa_path: "node_modules/@fortawesome/fontawesome-pro"
+  fa_type: pro
+  fa_weight: solid
+
   root:
     buttons:
-      button_0: { type: reset_buzzer, label: "Reset", key: 0, color: "#552222" }
-      button_1: { type: buzz, label: "P1", player_id: 1, key: 1 }
-      button_2: { type: buzz, label: "P2", player_id: 2, key: 2 }
-      button_3: { type: buzz, label: "P3", player_id: 3, key: 3 }
-      button_4: { type: buzz, label: "P4", player_id: 4, key: 4 }
-      button_5: { type: state, label: "Correct", state: correct, key: 5, color: "#224422" }
-      button_6: { type: state, label: "Wrong", state: incorrect, key: 6, color: "#442222" }
-      button_9: { type: state_display, label: "State", key: 9 }
-      button_11: { type: scene_current, label: "Scene", key: 11 }
-      button_14: { type: config_reload, label: "Reload", key: 14 }
+      # ── Row 1: buzz controls ─────────────────────────────────────────────────
+      button_0:
+        type: reset_buzzer
+        label: "Reset"
+        color: "#552222"
+        fa_icon: "rotate-left"
+        fa_size: 28
+        fa_color: "#ffaaaa"
+      button_1:
+        type: buzz
+        label: "P1"
+        player_id: 1
+      button_2:
+        type: buzz
+        label: "P2"
+        player_id: 2
+      button_3:
+        type: buzz
+        label: "P3"
+        player_id: 3
+      button_4:
+        type: buzz
+        label: "P4"
+        player_id: 4
+
+      # ── Row 2: host judgement ────────────────────────────────────────────────
+      button_5:
+        type: state
+        label: "Correct"
+        state: correct
+        color: "#004400"
+        fa_icon: "check"
+        fa_size: 38
+        fa_color: "#00ff88"
+        pressed:
+          color: "#006600"
+      button_6:
+        type: state
+        label: "Wrong"
+        state: incorrect
+        color: "#880000"
+        fa_icon: "xmark"
+        fa_size: 44
+        fa_color: "#ffffff"
+        pressed:
+          color: "#cc0000"
+      button_7:
+        type: state
+        label: "Open Buzz"
+        state: allow_next
+        color: "#2a2a00"
+        fa_icon: "lock-open"
+        fa_size: 26
+      button_8:
+        type: countdown
+        action: display
+        label: "Timer"
+      button_9:
+        type: state_display
+        label: "State"
+
+      # ── Row 3: navigation & pages ────────────────────────────────────────────
+      button_10:
+        type: scene_previous
+        fa_icon: "caret-large-left"
+        fa_size: 52
+      button_11:
+        type: scene_current
+        label: "Scene"
+      button_12:
+        type: scene_advance
+        fa_icon: "caret-large-right"
+        fa_size: 52
+
+      button_13:
+        type: page
+        label: "Sounds"
+        fa_icon: "music"
+        fa_size: 28
+        color: "#1a2233"
+        page:
+          buttons:
+            button_0:
+              type: sound
+              label: "Theme"
+              path: "music/Trivia_Theme.mp3"
+            button_1:
+              type: sound
+              label: "Correct"
+              path: "music/Trivia_Correct.mp3"
+            button_2:
+              type: sound
+              label: "Wrong"
+              path: "music/Trivia_Wrong.mp3"
+              color: "#440000"
+            button_3:
+              type: sound
+              label: "Timeout"
+              path: "music/Trivia_Timeout.mp3"
+            button_4:
+              type: sound
+              label: "Reveal"
+              path: "music/Trivia_Final_Reveal.mp3"
+            button_5:
+              type: stop_sounds
+              label: "Stop All"
+              color: "#552222"
+
+      button_14:
+        type: page
+        label: "More"
+        fa_icon: "ellipsis"
+        fa_size: 28
+        color: "#222233"
+        page:
+          buttons:
+            # Round flow
+            button_0:
+              type: state
+              label: "Rnd Start"
+              state: round_start
+              color: "#003344"
+              fa_icon: "play"
+              fa_size: 26
+            button_1:
+              type: state
+              label: "Game Over"
+              state: game_over
+              color: "#552222"
+            # Scene jump shortcuts
+            button_2:
+              type: scene_goto
+              label: "Intro"
+              target: "Intro"
+              color: "#222244"
+            button_3:
+              type: scene_goto
+              label: "Round 1"
+              target: "Round 1"
+              color: "#223344"
+            button_4:
+              type: scene_goto
+              label: "Round 2"
+              target: "Round 2"
+              color: "#223344"
+            button_5:
+              type: scene_goto
+              label: "Final Q"
+              target: "Final Jeopardy Question"
+              color: "#332244"
+            button_6:
+              type: scene_goto
+              label: "Final"
+              target: "Final Jeopardy"
+              color: "#332244"
+            button_12:
+              type: scene_goto
+              label: "Outro"
+              target: "Outro"
+              color: "#224422"
+            # Final Jeopardy controls
+            button_7:
+              type: page
+              label: "Final"
+              fa_icon: "star"
+              fa_size: 26
+              color: "#332244"
+              page:
+                buttons:
+                  button_0:
+                    type: state
+                    label: "Start Clue"
+                    state: round_start
+                    color: "#003344"
+                    fa_icon: "play"
+                    fa_size: 30
+                    fa_color: "#66ddff"
+                  button_1:
+                    type: state
+                    label: "Reveal"
+                    state: time_up
+                    color: "#442200"
+                    fa_icon: "eye"
+                    fa_size: 28
+                    fa_color: "#ffbb66"
+                  button_2:
+                    type: countdown
+                    action: display
+                    label: "Timer"
+                  button_3:
+                    type: countdown
+                    action: pause
+                    label: "Pause"
+                  button_4:
+                    type: countdown
+                    action: resume
+                    label: "Resume"
+                  button_5:
+                    type: reset_buzzer
+                    label: "Reset"
+                    color: "#552222"
+            # OBS sub-page
+            button_8:
+              type: page
+              label: "OBS"
+              fa_icon: "video"
+              fa_size: 26
+              color: "#332211"
+              page:
+                buttons:
+                  button_0:
+                    type: obs_scene
+                    label: "Intro"
+                    scene: "Trivia_Intro"
+                  button_1:
+                    type: obs_scene
+                    label: "Round 1"
+                    scene: "Trivia_Round1_Board"
+                  button_2:
+                    type: obs_scene
+                    label: "Round 2"
+                    scene: "Trivia_Round2_Board"
+                  button_3:
+                    type: obs_scene
+                    label: "Final Q"
+                    scene: "Trivia_Final_Category"
+                  button_4:
+                    type: obs_scene
+                    label: "Final"
+                    scene: "Trivia_Final"
+                  button_5:
+                    type: obs_scene
+                    label: "Reveal"
+                    scene: "Final_Reveal"
+                  button_6:
+                    type: obs_scene
+                    label: "Outro"
+                    scene: "Trivia_Outro"
+            # Lights sub-page
+            button_9:
+              type: page
+              label: "Lights"
+              fa_icon: "lightbulb"
+              fa_size: 26
+              color: "#332200"
+              page:
+                buttons:
+                  button_0:
+                    type: lighting
+                    label: "Idle"
+                    osc: "/palette/Idle/activate"
+                  button_1:
+                    type: lighting
+                    label: "Correct"
+                    osc: "/palette/Correct/activate"
+                    color: "#004400"
+                  button_2:
+                    type: lighting
+                    label: "Wrong"
+                    osc: "/palette/Incorrect/activate"
+                    color: "#440000"
+                  button_3:
+                    type: lighting
+                    label: "Final"
+                    osc: "/palette/FinalThink/activate"
+                  button_4:
+                    type: lighting
+                    label: "Reveal"
+                    osc: "/palette/Reveal/activate"
+                  button_5:
+                    type: lighting
+                    label: "Winner"
+                    osc: "/palette/GameOver/activate"
+            button_11:
+              type: config_reload
+              label: "Reload"
+              config: "trivia.yml"
