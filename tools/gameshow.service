@@ -1,0 +1,22 @@
+[Unit]
+Description=Game Show Controller
+After=network.target sound.target
+Wants=sound.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/gameshow
+Environment=PYNPUT_BACKEND_KEYBOARD=uinput
+Environment=PYNPUT_BACKEND_MOUSE=dummy
+ExecStartPre=/usr/local/bin/streamdeck-reset
+ExecStart=/opt/gameshow/.venv/bin/python main.py
+KillSignal=SIGKILL
+RestartSec=3
+Restart=on-failure
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gameshow
+
+[Install]
+WantedBy=multi-user.target

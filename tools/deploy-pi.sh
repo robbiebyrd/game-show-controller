@@ -41,11 +41,24 @@ apt-get install -y \
 # ENTTEC Open DMX USB (FTDI FT232, 0403:6001) must be world-accessible for the
 # ftdidmx plugin to open it via libusb and detach the ftdi_sio kernel driver.
 DMX_RULES_FILE="/etc/udev/rules.d/99-enttec-dmx.rules"
-log "Installing udev rule for ENTTEC Open DMX USB..."
+log "Installing udev rules for ENTTEC Open DMX USB..."
 cat > "${DMX_RULES_FILE}" <<'EOF'
-# ENTTEC Open DMX USB (FTDI FT232) — grant non-root access for OLA's ftdidmx plugin
-SUBSYSTEM=="usb", ATTR{idVendor}=="0403", ATTR{idProduct}=="6001", MODE="0666"
+# ENTTEC Open DMX USB (FTDI FT232) — grant non-root access for OLA's ftdidmx plugin.
+# MODE="0666" lets the unprivileged olad process open the device via libusb.
+# RUN+="usbreset ..." resets the FTDI chip on every plug-in so ftdi_sio can't leave
+# it in a bad state even if the module is loaded (the blacklist below is preferred,
+# but belt-and-suspenders keeps OLA working across unexpected kernel module changes).
+SUBSYSTEM=="usb", ATTR{idVendor}=="0403", ATTR{idProduct}=="6001", MODE="0666", \
+    RUN+="/usr/bin/usbreset /dev/%E{DEVNAME}"
 EOF
+
+# Blacklist ftdi_sio so the kernel never auto-binds it to the ENTTEC device.
+# OLA's ftdidmx plugin talks to the FTDI chip directly via libusb; ftdi_sio
+# binding first corrupts the chip's internal state in a way only a power-cycle fixes.
+log "Blacklisting ftdi_sio kernel module..."
+echo 'blacklist ftdi_sio' > /etc/modprobe.d/ftdi_sio-blacklist.conf
+rmmod ftdi_sio 2>/dev/null || true
+
 udevadm control --reload-rules
 udevadm trigger --subsystem-match=usb
 
@@ -68,6 +81,18 @@ log "Installing Python dependencies..."
 "${VENV_DIR}/bin/pip" install --upgrade pip -q
 "${VENV_DIR}/bin/pip" install "${INSTALL_DIR}" -q
 
+# ── Stream Deck USB reset helper ───────────────────────────────────────────────
+# The app's libusb layer can leave the Stream Deck in a bad state when killed.
+# usbreset sends USBDEVFS_RESET to force a clean re-enumeration before startup.
+log "Installing Stream Deck USB reset script..."
+cat > /usr/local/bin/streamdeck-reset <<'RESETEOF'
+#!/usr/bin/env bash
+dev=$(lsusb | awk '/0fd9:/ {printf "/dev/bus/usb/%s/%s", $2, $4}' | tr -d ':')
+[ -n "$dev" ] && usbreset "$dev" && sleep 1
+exit 0
+RESETEOF
+chmod +x /usr/local/bin/streamdeck-reset
+
 # ── systemd service ────────────────────────────────────────────────────────────
 log "Installing systemd service: ${SERVICE_NAME}..."
 cat > "${SERVICE_FILE}" <<EOF
@@ -83,7 +108,10 @@ WorkingDirectory=${INSTALL_DIR}
 # pynput on headless Linux: keyboard uses uinput (needs root + dumpkeys), mouse uses dummy
 Environment=PYNPUT_BACKEND_KEYBOARD=uinput
 Environment=PYNPUT_BACKEND_MOUSE=dummy
+ExecStartPre=/usr/local/bin/streamdeck-reset
 ExecStart=${VENV_DIR}/bin/python main.py
+KillSignal=SIGKILL
+RestartSec=3
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
