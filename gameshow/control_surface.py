@@ -37,7 +37,8 @@ _DIRECT_COMMANDS: dict[str, tuple[str, tuple[str, ...]]] = {
 # ▶ ◀ ✔ ✓ render instead of tofu boxes. Helvetica/Arial (no such glyphs) are
 # last-resort only.
 _FALLBACK_FONTS = (
-    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",   # macOS, very broad
+    "./fonts/Arial-Unicode.ttf",                                 # bundled with the app, broad coverage
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",    # macOS, very broad
     "/Library/Fonts/Arial Unicode.ttf",                        # macOS (older layout)
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",         # Debian/Ubuntu
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",                  # Fedora/Arch
