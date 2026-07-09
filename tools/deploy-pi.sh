@@ -34,7 +34,9 @@ apt-get install -y \
     libasound2-dev \
     python3-xlib \
     python3-evdev \
-    libhidapi-libusb0
+    libhidapi-libusb0 \
+    nodejs \
+    npm
 
 # ── DMX USB access ───────────────────────────────────────────────────────────
 # The OLA container runs olad unprivileged (olad refuses to run as root), so the
@@ -80,6 +82,25 @@ python3 -m venv "${VENV_DIR}"
 log "Installing Python dependencies..."
 "${VENV_DIR}/bin/pip" install --upgrade pip -q
 "${VENV_DIR}/bin/pip" install "${INSTALL_DIR}" -q
+
+# ── Font Awesome Pro fonts (npm) ───────────────────────────────────────────────
+# The Stream Deck control surface renders Font Awesome Pro glyphs from
+# node_modules/@fortawesome/fontawesome-pro (see shows/*.yaml `fa_path`). npm
+# authenticates to the private registry via .npmrc, which expands
+# ${FONTAWESOME_PACKAGE_TOKEN}. That token is a licensed secret and is never
+# committed, so it must live in ${INSTALL_DIR}/.env — which is gitignored and
+# therefore survives the auto-updater's `git reset --hard`.
+ENV_FILE="${INSTALL_DIR}/.env"
+[[ -f "${ENV_FILE}" ]] || die "Missing ${ENV_FILE} with FONTAWESOME_PACKAGE_TOKEN. \
+Create it (see .env.example) before deploying; Font Awesome fonts cannot be fetched without it."
+
+log "Fetching Font Awesome Pro fonts (npm)..."
+(
+    set -a; . "${ENV_FILE}"; set +a
+    [[ -n "${FONTAWESOME_PACKAGE_TOKEN:-}" ]] || exit 3
+    cd "${INSTALL_DIR}"
+    npm install --no-audit --no-fund
+) || die "npm install failed — check FONTAWESOME_PACKAGE_TOKEN in ${ENV_FILE}"
 
 # ── Stream Deck USB reset helper ───────────────────────────────────────────────
 # The app's libusb layer can leave the Stream Deck in a bad state when killed.
@@ -153,10 +174,25 @@ if ! git -C "\${INSTALL_DIR}" diff --quiet "\${LOCAL}" "\${REMOTE}" -- pyproject
     DEPS_CHANGED=true
 fi
 
+FONTS_CHANGED=false
+if ! git -C "\${INSTALL_DIR}" diff --quiet "\${LOCAL}" "\${REMOTE}" -- package.json package-lock.json; then
+    FONTS_CHANGED=true
+fi
+
 git -C "\${INSTALL_DIR}" reset --hard "origin/\${BRANCH}"
 
 if [[ "\${DEPS_CHANGED}" == "true" ]]; then
     "\${VENV_DIR}/bin/pip" install "\${INSTALL_DIR}" -q
+fi
+
+# Re-fetch Font Awesome Pro fonts when the npm manifest changes. The token comes
+# from \${INSTALL_DIR}/.env (gitignored, so untouched by the reset above).
+if [[ "\${FONTS_CHANGED}" == "true" ]]; then
+    (
+        set -a; . "\${INSTALL_DIR}/.env"; set +a
+        cd "\${INSTALL_DIR}"
+        npm install --no-audit --no-fund
+    )
 fi
 
 systemctl restart "\${SERVICE_NAME}"
