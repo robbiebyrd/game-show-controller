@@ -57,7 +57,7 @@ show:
   scenes:
     - name: "Intro"
       on_enter:
-        audio_background: "music/FamilyFeud_Theme.mp3"
+        audio_background: "music/FamilyFeud_Theme.wav"
         obs_scene: "FamilyFeud_Intro"
         lighting: "/live/Control_Panel/cue/Intro_Sweep/activate"
       buzzers:
@@ -66,7 +66,7 @@ show:
     # ── Round 1 ──────────────────────────────────────────────────────────────
     - name: "Round 1 Face-Off"
       on_enter:
-        audio_background: "music/FamilyFeud_FaceOff_Sting.mp3"
+        audio_background: "music/FamilyFeud_FaceOff_Sting.wav"
         obs_scene: "FaceOff_Ready"
         lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
       state_machine: faceoff
@@ -83,7 +83,7 @@ show:
     # ── Round 2 ──────────────────────────────────────────────────────────────
     - name: "Round 2 Face-Off"
       on_enter:
-        audio_background: "music/FamilyFeud_FaceOff_Sting.mp3"
+        audio_background: "music/FamilyFeud_FaceOff_Sting.wav"
         obs_scene: "FaceOff_Ready"
         lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
       state_machine: faceoff
@@ -100,7 +100,7 @@ show:
     # ── Round 3 ──────────────────────────────────────────────────────────────
     - name: "Round 3 Face-Off"
       on_enter:
-        audio_background: "music/FamilyFeud_FaceOff_Sting.mp3"
+        audio_background: "music/FamilyFeud_FaceOff_Sting.wav"
         obs_scene: "FaceOff_Ready"
         lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
       state_machine: faceoff
@@ -117,7 +117,7 @@ show:
     # ── Round 4 (Sudden Death) ────────────────────────────────────────────────
     - name: "Round 4 Face-Off"
       on_enter:
-        audio_background: "music/FamilyFeud_FaceOff_Sting.mp3"
+        audio_background: "music/FamilyFeud_FaceOff_Sting.wav"
         obs_scene: "FaceOff_Ready"
         lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
       state_machine: faceoff
@@ -138,7 +138,7 @@ show:
     # advances the scene for Player 2 and reveals the combined tally.
     - name: "Speed Round - Player 1"
       on_enter:
-        audio_background: "music/FamilyFeud_SpeedRound_Intro.mp3"
+        audio_background: "music/FamilyFeud_SpeedRound_Intro.wav"
         obs_scene: "SpeedRound_Player1"
         lighting: "/live/Control_Panel/cue/SpeedRound_Ready/activate"
       state_machine: speed_round
@@ -148,7 +148,7 @@ show:
 
     - name: "Speed Round - Player 2"
       on_enter:
-        audio_background: "music/FamilyFeud_SpeedRound_Intro.mp3"
+        audio_background: "music/FamilyFeud_SpeedRound_Intro.wav"
         obs_scene: "SpeedRound_Player2"
         lighting: "/live/Control_Panel/cue/SpeedRound_Ready/activate"
       state_machine: speed_round
@@ -158,7 +158,7 @@ show:
 
     - name: "Outro"
       on_enter:
-        audio_background: "music/FamilyFeud_Winner_Celebration.mp3"
+        audio_background: "music/FamilyFeud_Winner_Celebration.wav"
         obs_scene: "FamilyFeud_Outro"
         lighting: "/live/Control_Panel/cue/Winner_Celebration/activate"
       buzzers:
@@ -308,27 +308,27 @@ audio:
     player_2_buzz:
       effect: "music/FamilyFeud_FaceOff_Buzz.mp3"
     faceoff_win:
-      effect: "music/FamilyFeud_FaceOff_Win.mp3"
+      effect: "music/FamilyFeud_FaceOff_Win.wav"
     correct:
-      effect: "music/FamilyFeud_Answer_Reveal.mp3"
+      effect: "music/FamilyFeud_Answer_Reveal.wav"
     incorrect:
-      effect: "music/FamilyFeud_Strike_Buzz.mp3"
+      effect: "music/FamilyFeud_Strike_Buzz.wav"
     three_strikes:
-      effect: "music/FamilyFeud_Three_Strikes.mp3"
+      effect: "music/FamilyFeud_Three_Strikes.wav"
     steal_correct:
-      effect: "music/FamilyFeud_Steal_Win.mp3"
+      effect: "music/FamilyFeud_Steal_Win.wav"
     steal_incorrect:
-      effect: "music/FamilyFeud_Board_Reveal.mp3"
+      effect: "music/FamilyFeud_Board_Reveal.wav"
     reveal:
-      effect: "music/FamilyFeud_Board_Reveal.mp3"
+      effect: "music/FamilyFeud_Board_Reveal.wav"
     turn:
-      background: "music/FamilyFeud_SpeedRound_Tick.mp3"
+      background: "music/FamilyFeud_SpeedRound_Tick.wav"
     time_up:
       effect: "music/FamilyFeud_SpeedRound_TimeUp.mp3"
     round_start:
       effect: "music/FamilyFeud_Round_Start.mp3"
     game_over:
-      background: "music/FamilyFeud_Winner_Celebration.mp3"
+      background: "music/FamilyFeud_Winner_Celebration.wav"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -489,11 +489,11 @@ control_surface:
             button_0:
               type: sound
               label: "Theme"
-              path: "music/FamilyFeud_Theme.mp3"
+              path: "music/FamilyFeud_Theme.wav"
             button_1:
               type: sound
               label: "Face-Off"
-              path: "music/FamilyFeud_FaceOff_Sting.mp3"
+              path: "music/FamilyFeud_FaceOff_Sting.wav"
             button_2:
               type: sound
               label: "Buzz In"
@@ -501,34 +501,34 @@ control_surface:
             button_3:
               type: sound
               label: "Answer!"
-              path: "music/FamilyFeud_Answer_Reveal.mp3"
+              path: "music/FamilyFeud_Answer_Reveal.wav"
             button_4:
               type: sound
               label: "Strike!"
-              path: "music/FamilyFeud_Strike_Buzz.mp3"
+              path: "music/FamilyFeud_Strike_Buzz.wav"
               color: "#440000"
             button_5:
               type: sound
               label: "3 Strikes"
-              path: "music/FamilyFeud_Three_Strikes.mp3"
+              path: "music/FamilyFeud_Three_Strikes.wav"
               color: "#442200"
             button_6:
               type: sound
               label: "Steal Win"
-              path: "music/FamilyFeud_Steal_Win.mp3"
+              path: "music/FamilyFeud_Steal_Win.wav"
               color: "#004422"
             button_7:
               type: sound
               label: "Reveal"
-              path: "music/FamilyFeud_Board_Reveal.mp3"
+              path: "music/FamilyFeud_Board_Reveal.wav"
             button_8:
               type: sound
               label: "Speed Rnd"
-              path: "music/FamilyFeud_SpeedRound_Intro.mp3"
+              path: "music/FamilyFeud_SpeedRound_Intro.wav"
             button_9:
               type: sound
               label: "Winner!"
-              path: "music/FamilyFeud_Winner_Celebration.mp3"
+              path: "music/FamilyFeud_Winner_Celebration.wav"
               color: "#223300"
             button_11:
               type: stop_sounds

@@ -19,7 +19,7 @@ show:
   scenes:
     - name: "Intro"
       on_enter:
-        audio_background: "music/Game Level Up 1.mp3"
+        audio_background: "music/Trivia_Theme.mp3"
         obs_scene: "Trivia_Intro"
         lighting: "/palette/Intro/activate"
       buzzers:
@@ -44,7 +44,7 @@ show:
     # think clock.
     - name: "Final Jeopardy Question"
       on_enter:
-        audio_background: "music/Game Reveal Sound 2.mp3"
+        audio_background: "music/Trivia_Final_Question.mp3"
         obs_scene: "Trivia_Final_Category"
         lighting: "/palette/FinalCategory/activate"
       state_machine: final_jeopardy
@@ -66,7 +66,7 @@ show:
 
     - name: "Outro"
       on_enter:
-        audio_background: "music/Game Level Up 1.mp3"
+        audio_background: "music/Trivia_Outro.mp3"
         obs_scene: "Trivia_Outro"
         lighting: "/palette/GameOver/activate"
       buzzers:
@@ -156,27 +156,27 @@ audio:
   default_effect_volume: 1.0
   states:
     player_1_buzz:
-      effect: "music/Game Inventory Slot 2.mp3"
+      effect: "music/Trivia_Buzz_P1.mp3"
     player_2_buzz:
-      effect: "music/Game Checkpoint Sound 1.mp3"
+      effect: "music/Trivia_Buzz_P2.mp3"
     player_3_buzz:
-      effect: "music/Game Coin 2.mp3"
+      effect: "music/Trivia_Buzz_P3.mp3"
     player_4_buzz:
-      effect: "music/Game Block Destruction 2.mp3"
+      effect: "music/Trivia_Buzz_P4.mp3"
     correct:
-      effect: "music/Game Achievement Sound 1.mp3"
+      effect: "music/Trivia_Correct.mp3"
     incorrect:
-      effect: "music/Game Error 2.mp3"
+      effect: "music/Trivia_Wrong.mp3"
     buzz_timeout:
-      effect: "music/Game Block Destruction 2.mp3"
+      effect: "music/Trivia_Timeout.mp3"
     round_start:
-      background: "music/Game Score Count 2.mp3"
+      background: "music/Trivia_Round_Start.mp3"
     thinking:
-      background: "music/Game Checkpoint Sound 1.mp3"   # the think-clock bed
+      background: "music/Trivia_Final_Think.mp3"        # the think-clock bed
     reveal:
-      effect: "music/Game Reveal Sound 2.mp3"
+      effect: "music/Trivia_Final_Reveal.mp3"
     game_over:
-      background: "music/Game Level Up 1.mp3"
+      background: "music/Trivia_Game_Over.mp3"
 
 obs:
   states:
@@ -295,24 +295,24 @@ control_surface:
             button_0:
               type: sound
               label: "Theme"
-              path: "music/Game Level Up 1.mp3"
+              path: "music/Trivia_Theme.mp3"
             button_1:
               type: sound
               label: "Correct"
-              path: "music/Game Achievement Sound 1.mp3"
+              path: "music/Trivia_Correct.mp3"
             button_2:
               type: sound
               label: "Wrong"
-              path: "music/Game Error 2.mp3"
+              path: "music/Trivia_Wrong.mp3"
               color: "#440000"
             button_3:
               type: sound
               label: "Timeout"
-              path: "music/Game Block Destruction 2.mp3"
+              path: "music/Trivia_Timeout.mp3"
             button_4:
               type: sound
               label: "Reveal"
-              path: "music/Game Reveal Sound 2.mp3"
+              path: "music/Trivia_Final_Reveal.mp3"
             button_5:
               type: stop_sounds
               label: "Stop All"
@@ -443,7 +443,7 @@ control_surface:
                   button_5:
                     type: obs_scene
                     label: "Reveal"
-                    scene: "Trivia_Final_Reveal"
+                    scene: "Final_Reveal"
                   button_6:
                     type: obs_scene
                     label: "Outro"

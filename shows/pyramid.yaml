@@ -63,7 +63,7 @@ show:
   scenes:
     - name: "Intro"
       on_enter:
-        audio_background: "Game Level Up 1.mp3"
+        audio_background: "music/Pyramid_Theme.mp3"
         obs_scene: "Pyramid_Intro"
         lighting: "/live/Control_Panel/cue/Intro_Sweep/activate"
       buzzers:
@@ -124,7 +124,7 @@ show:
     # Extra subjects (words beginning with a set letter) until one team leads.
     - name: "Tiebreaker"
       on_enter:
-        audio_background: "Game Error 2.mp3"
+        audio_background: "music/Pyramid_Tiebreaker.mp3"
         obs_scene: "Pyramid_Board"
         lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
       state_machine: front_game
@@ -136,7 +136,7 @@ show:
     # zeroes the front-game points so the circle starts fresh in dollars.
     - name: "Winner's Circle"
       on_enter:
-        audio_background: "Game Checkpoint Sound 1.mp3"
+        audio_background: "music/Pyramid_Winners_Circle_Start.mp3"
         obs_scene: "Pyramid_Winners_Circle"
         lighting: "/live/Control_Panel/cue/Winners_Circle_Ready/activate"
       state_machine: winners_circle
@@ -145,7 +145,7 @@ show:
 
     - name: "Outro"
       on_enter:
-        audio_background: "Game Reveal Sound 2.mp3"
+        audio_background: "music/Pyramid_Outro.mp3"
         obs_scene: "Pyramid_Outro"
         lighting: "/live/Control_Panel/cue/Winner_Celebration/activate"
       buzzers:
@@ -286,21 +286,21 @@ audio:
   # so a sound there would repeat. Per-item feedback lives on correct/cuckoo.
   states:
     correct:
-      effect: "Game Coin 2.mp3"                # item conveyed — ding
+      effect: "music/Pyramid_Item_Correct.mp3"     # item conveyed — ding
     cuckoo:
-      effect: "Game Error 2.mp3"               # illegal clue — the cuckoo buzzer
+      effect: "music/Pyramid_Cuckoo.mp3"           # illegal clue — the cuckoo buzzer
     subject_complete:
-      effect: "Game Score Count 2.mp3"         # subject over (perfect or time)
+      effect: "music/Pyramid_Subject_Score.mp3"    # subject over (perfect or time)
     perfect:
-      effect: "Game Level Up 1.mp3"            # perfect 21 — $1,000 fanfare
+      effect: "music/Pyramid_Perfect_21.mp3"       # perfect 21 — $1,000 fanfare
     subject_win:
-      effect: "Game Achievement Sound 1.mp3"   # subject cleared in the circle
+      effect: "music/Pyramid_Circle_Correct.mp3"   # subject cleared in the circle
     times_up:
-      effect: "Mission Failed Sound Effect 2.mp3"  # 60 s elapsed, board not cleared
+      effect: "music/Pyramid_Time_Up.mp3"          # 60 s elapsed, board not cleared
     board_cleared:
-      effect: "Game Level Up 1.mp3"            # $10,000!
+      effect: "music/Pyramid_Jackpot.mp3"          # $10,000!
     game_over:
-      effect: "Game Reveal Sound 2.mp3"
+      effect: "music/Pyramid_Winner_Reveal.mp3"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -712,33 +712,33 @@ control_surface:
                   button_0:
                     type: sound
                     label: "Theme"
-                    path: "Game Level Up 1.mp3"
+                    path: "music/Pyramid_Theme.mp3"
                   button_1:
                     type: sound
                     label: "Clock"
-                    path: "Game Checkpoint Sound 1.mp3"
+                    path: "music/Pyramid_Subject_Clock.mp3"
                   button_2:
                     type: sound
                     label: "Item!"
-                    path: "Game Coin 2.mp3"
+                    path: "music/Pyramid_Item_Correct.mp3"
                   button_3:
                     type: sound
                     label: "Cuckoo"
-                    path: "Game Error 2.mp3"
+                    path: "music/Pyramid_Cuckoo.mp3"
                     color: "#440000"
                   button_4:
                     type: sound
                     label: "Score"
-                    path: "Game Score Count 2.mp3"
+                    path: "music/Pyramid_Subject_Score.mp3"
                   button_5:
                     type: sound
                     label: "Circle Win"
-                    path: "Game Achievement Sound 1.mp3"
+                    path: "music/Pyramid_Circle_Correct.mp3"
                     color: "#004422"
                   button_6:
                     type: sound
                     label: "Reveal"
-                    path: "Game Reveal Sound 2.mp3"
+                    path: "music/Pyramid_Winner_Reveal.mp3"
                   button_7:
                     type: stop_sounds
                     label: "Stop All"
