@@ -354,3 +354,9 @@ control_surface:
                     label: "Mute Mic"
                     request_type: "SetInputMute"
                     request_data: { inputName: "Mic", inputMuted: true }
+            button_7:
+              type: show_browser
+              label: "Shows"
+              fa_icon: "list"
+              fa_size: 26
+              color: "#223322"
