@@ -58,8 +58,8 @@ show:
     - name: "Intro"
       on_enter:
         audio_background: "music/FamilyFeud_Theme.wav"
-        obs_scene: "FamilyFeud_Intro"
-        lighting: "/live/Control_Panel/cue/Intro_Sweep/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Sparkle/activate"
       buzzers:
         all_enabled: false
 
@@ -67,8 +67,8 @@ show:
     - name: "Round 1 Face-Off"
       on_enter:
         audio_background: "music/FamilyFeud_FaceOff_Sting.wav"
-        obs_scene: "FaceOff_Ready"
-        lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: faceoff
       buzzers:
         buzz_timeout_seconds: null    # no time limit on a face-off answer
@@ -76,16 +76,16 @@ show:
     - name: "Round 1"
       on_enter:
         audio_background: "music/FamilyFeud_Round_Start.mp3"
-        obs_scene: "Round_Board"
-        lighting: "/live/Control_Panel/cue/Round_Play/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: playing
 
     # ── Round 2 ──────────────────────────────────────────────────────────────
     - name: "Round 2 Face-Off"
       on_enter:
         audio_background: "music/FamilyFeud_FaceOff_Sting.wav"
-        obs_scene: "FaceOff_Ready"
-        lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: faceoff
       buzzers:
         buzz_timeout_seconds: null
@@ -93,16 +93,16 @@ show:
     - name: "Round 2"
       on_enter:
         audio_background: "music/FamilyFeud_Round_Start.mp3"
-        obs_scene: "Round_Board"
-        lighting: "/live/Control_Panel/cue/Round_Play/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: playing
 
     # ── Round 3 ──────────────────────────────────────────────────────────────
     - name: "Round 3 Face-Off"
       on_enter:
         audio_background: "music/FamilyFeud_FaceOff_Sting.wav"
-        obs_scene: "FaceOff_Ready"
-        lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: faceoff
       buzzers:
         buzz_timeout_seconds: null
@@ -110,16 +110,16 @@ show:
     - name: "Round 3"
       on_enter:
         audio_background: "music/FamilyFeud_Round_Start.mp3"
-        obs_scene: "Round_Board"
-        lighting: "/live/Control_Panel/cue/Round_Play/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: playing
 
     # ── Round 4 (Sudden Death) ────────────────────────────────────────────────
     - name: "Round 4 Face-Off"
       on_enter:
         audio_background: "music/FamilyFeud_FaceOff_Sting.wav"
-        obs_scene: "FaceOff_Ready"
-        lighting: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: faceoff
       buzzers:
         buzz_timeout_seconds: null
@@ -127,8 +127,8 @@ show:
     - name: "Round 4"
       on_enter:
         audio_background: "music/FamilyFeud_Round_Start.mp3"
-        obs_scene: "Round_Board"
-        lighting: "/live/Control_Panel/cue/Round_Play/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: playing
 
     # ── Speed Round (Fast Money) ────────────────────────────────────────────────
@@ -139,8 +139,8 @@ show:
     - name: "Speed Round - Player 1"
       on_enter:
         audio_background: "music/FamilyFeud_SpeedRound_Intro.wav"
-        obs_scene: "SpeedRound_Player1"
-        lighting: "/live/Control_Panel/cue/SpeedRound_Ready/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: speed_round
       buzzers:
         buzz_timeout_seconds: 25.0
@@ -149,8 +149,8 @@ show:
     - name: "Speed Round - Player 2"
       on_enter:
         audio_background: "music/FamilyFeud_SpeedRound_Intro.wav"
-        obs_scene: "SpeedRound_Player2"
-        lighting: "/live/Control_Panel/cue/SpeedRound_Ready/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: speed_round
       buzzers:
         buzz_timeout_seconds: 30.0
@@ -159,8 +159,8 @@ show:
     - name: "Outro"
       on_enter:
         audio_background: "music/FamilyFeud_Winner_Celebration.wav"
-        obs_scene: "FamilyFeud_Outro"
-        lighting: "/live/Control_Panel/cue/Winner_Celebration/activate"
+        obs_scene: "Top8"
+        lighting: "/live/Control_Panel/cue/Sparkle/activate"
       buzzers:
         all_enabled: false
 
@@ -278,21 +278,21 @@ state_machines:
 lighting:
   states:
     idle:            "/live/Control_Panel/cue/Game/activate"
-    locked:          "/live/Control_Panel/cue/FaceOff_Buzz/activate"
+    locked:          "/live/Control_Panel/cue/Green_Buzz/activate"
     player_1_buzz:   "/live/Control_Panel/cue/Buzz_Left/activate"
     player_2_buzz:   "/live/Control_Panel/cue/Buzz_Right/activate"
-    faceoff_win:     "/live/Control_Panel/cue/FaceOff_Win/activate"
+    faceoff_win:     "/live/Control_Panel/cue/Sparkle/activate"
     allow_next:      "/live/*/cue/*/deactivate 0"
-    correct:         "/live/Control_Panel/cue/Correct_Answer/activate"
-    incorrect:       "/live/Control_Panel/cue/Strike/activate"
-    three_strikes:   "/live/Control_Panel/cue/Three_Strikes/activate"
-    steal_correct:   "/live/Control_Panel/cue/Steal_Win/activate"
-    steal_incorrect: "/live/Control_Panel/cue/Board_Reveal/activate"
-    turn:            "/live/Control_Panel/cue/SpeedRound_Play/activate"
-    time_up:         "/live/Control_Panel/cue/SpeedRound_TimeUp/activate"
-    reveal:          "/live/Control_Panel/cue/Board_Reveal/activate"
-    round_start:     "/live/Control_Panel/cue/Round_Start/activate"
-    game_over:       "/live/Control_Panel/cue/Winner_Reveal/activate"
+    correct:         "/live/Control_Panel/cue/Correct/activate"
+    incorrect:       "/live/Control_Panel/cue/Incorrect/activate"
+    three_strikes:   "/live/Control_Panel/cue/Incorrect/activate"
+    steal_correct:   "/live/Control_Panel/cue/Sparkle/activate"
+    steal_incorrect: "/live/Control_Panel/cue/Reveal/activate"
+    turn:            "/live/Control_Panel/cue/Game/activate"
+    time_up:         "/live/Control_Panel/cue/Buzzer_Timeout/activate"
+    reveal:          "/live/Control_Panel/cue/Reveal/activate"
+    round_start:     "/live/Control_Panel/cue/Game/activate"
+    game_over:       "/live/Control_Panel/cue/Sparkle/activate"
     clear:           "/live/*/cue/*/deactivate 0"
 
 
@@ -336,19 +336,19 @@ audio:
 # ─────────────────────────────────────────────────────────────────────────────
 obs:
   states:
-    idle:            "Game_Idle"
-    locked:          "FaceOff_Buzz"
-    faceoff_win:     "FaceOff_Win"
-    allow_next:      "FaceOff_Ready"
-    correct:         "Answer_Reveal"
-    incorrect:       "Strike_Display"
-    three_strikes:   "Three_Strikes"
-    steal_correct:   "Steal_Win"
-    steal_incorrect: "Board_Reveal"
-    time_up:         "SpeedRound_TimeUp"
-    reveal:          "SpeedRound_Reveal"
-    round_start:     "Round_Start"
-    game_over:       "Game_Over"
+    idle:            "Top8"
+    locked:          "Top8"
+    faceoff_win:     "Top8"
+    allow_next:      "Top8"
+    correct:         "Top8"
+    incorrect:       "Top8"
+    three_strikes:   "Top8"
+    steal_correct:   "Top8"
+    steal_incorrect: "Top8"
+    time_up:         "Top8"
+    reveal:          "Top8"
+    round_start:     "Top8"
+    game_over:       "Top8"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -630,55 +630,12 @@ control_surface:
                     action: cancel
                     label: "Cancel"
                     color: "#552222"
-            # OBS sub-page
             button_9:
-              type: page
-              label: "OBS"
-              fa_icon: "video"
+              type: show_browser
+              label: "Shows"
+              fa_icon: "list"
               fa_size: 26
-              color: "#332211"
-              page:
-                buttons:
-                  button_0:
-                    type: obs_scene
-                    label: "Intro"
-                    scene: "FamilyFeud_Intro"
-                  button_1:
-                    type: obs_scene
-                    label: "Face-Off"
-                    scene: "FaceOff_Ready"
-                  button_2:
-                    type: obs_scene
-                    label: "FO Buzz"
-                    scene: "FaceOff_Buzz"
-                  button_3:
-                    type: obs_scene
-                    label: "Board"
-                    scene: "Round_Board"
-                  button_4:
-                    type: obs_scene
-                    label: "3 Strikes"
-                    scene: "Three_Strikes"
-                  button_5:
-                    type: obs_scene
-                    label: "Spd Rnd P1"
-                    scene: "SpeedRound_Player1"
-                  button_6:
-                    type: obs_scene
-                    label: "Spd Rnd P2"
-                    scene: "SpeedRound_Player2"
-                  button_7:
-                    type: obs_scene
-                    label: "Reveal"
-                    scene: "SpeedRound_Reveal"
-                  button_8:
-                    type: obs_scene
-                    label: "Game Over"
-                    scene: "Game_Over"
-                  button_9:
-                    type: obs_scene
-                    label: "Outro"
-                    scene: "FamilyFeud_Outro"
+              color: "#223322"
             # Lights sub-page
             button_11:
               type: page
@@ -695,38 +652,38 @@ control_surface:
                   button_1:
                     type: lighting
                     label: "FaceOff"
-                    osc: "/live/Control_Panel/cue/FaceOff_Ready/activate"
+                    osc: "/live/Control_Panel/cue/Game/activate"
                   button_2:
                     type: lighting
                     label: "Correct"
-                    osc: "/live/Control_Panel/cue/Correct_Answer/activate"
+                    osc: "/live/Control_Panel/cue/Correct/activate"
                     color: "#004400"
                   button_3:
                     type: lighting
                     label: "Strike"
-                    osc: "/live/Control_Panel/cue/Strike/activate"
+                    osc: "/live/Control_Panel/cue/Incorrect/activate"
                     color: "#440000"
                   button_4:
                     type: lighting
                     label: "3 Strikes"
-                    osc: "/live/Control_Panel/cue/Three_Strikes/activate"
+                    osc: "/live/Control_Panel/cue/Incorrect/activate"
                     color: "#442200"
                   button_5:
                     type: lighting
                     label: "Steal"
-                    osc: "/live/Control_Panel/cue/FaceOff_Buzz/activate"
+                    osc: "/live/Control_Panel/cue/Green_Buzz/activate"
                   button_6:
                     type: lighting
                     label: "Reveal"
-                    osc: "/live/Control_Panel/cue/Board_Reveal/activate"
+                    osc: "/live/Control_Panel/cue/Reveal/activate"
                   button_7:
                     type: lighting
                     label: "Speed Rnd"
-                    osc: "/live/Control_Panel/cue/SpeedRound_P1/activate"
+                    osc: "/live/Control_Panel/cue/Game/activate"
                   button_8:
                     type: lighting
                     label: "Winner"
-                    osc: "/live/Control_Panel/cue/Winner_Reveal/activate"
+                    osc: "/live/Control_Panel/cue/Sparkle/activate"
                     color: "#332200"
                   button_9:
                     type: lighting

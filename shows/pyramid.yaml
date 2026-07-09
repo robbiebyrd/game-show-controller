@@ -64,24 +64,24 @@ show:
     - name: "Intro"
       on_enter:
         audio_background: "music/Pyramid_Theme.mp3"
-        obs_scene: "Pyramid_Intro"
-        lighting: "/live/Control_Panel/cue/Intro_Sweep/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Sparkle/activate"
       buzzers:
         all_enabled: false
 
     # ── Round 1 (celebrities give clues) ──────────────────────────────────────
     - name: "Round 1 - Team A"
       on_enter:
-        obs_scene: "Pyramid_Board"
-        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Reveal/activate"
       state_machine: front_game
       buzzers:
         buzz_timeout_seconds: 30.0    # the 30-second subject clock
 
     - name: "Round 1 - Team B"
       on_enter:
-        obs_scene: "Pyramid_Board"
-        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Reveal/activate"
       state_machine: front_game
       buzzers:
         buzz_timeout_seconds: 30.0
@@ -89,16 +89,16 @@ show:
     # ── Round 2 (civilians give clues) ────────────────────────────────────────
     - name: "Round 2 - Team A"
       on_enter:
-        obs_scene: "Pyramid_Board"
-        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Reveal/activate"
       state_machine: front_game
       buzzers:
         buzz_timeout_seconds: 30.0
 
     - name: "Round 2 - Team B"
       on_enter:
-        obs_scene: "Pyramid_Board"
-        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Reveal/activate"
       state_machine: front_game
       buzzers:
         buzz_timeout_seconds: 30.0
@@ -106,16 +106,16 @@ show:
     # ── Round 3 (team's choice of clue-giver) ─────────────────────────────────
     - name: "Round 3 - Team A"
       on_enter:
-        obs_scene: "Pyramid_Board"
-        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Reveal/activate"
       state_machine: front_game
       buzzers:
         buzz_timeout_seconds: 30.0
 
     - name: "Round 3 - Team B"
       on_enter:
-        obs_scene: "Pyramid_Board"
-        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Reveal/activate"
       state_machine: front_game
       buzzers:
         buzz_timeout_seconds: 30.0
@@ -125,8 +125,8 @@ show:
     - name: "Tiebreaker"
       on_enter:
         audio_background: "music/Pyramid_Tiebreaker.mp3"
-        obs_scene: "Pyramid_Board"
-        lighting: "/live/Control_Panel/cue/Board_Reveal/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Reveal/activate"
       state_machine: front_game
       buzzers:
         buzz_timeout_seconds: 30.0
@@ -137,8 +137,8 @@ show:
     - name: "Winner's Circle"
       on_enter:
         audio_background: "music/Pyramid_Winners_Circle_Start.mp3"
-        obs_scene: "Pyramid_Winners_Circle"
-        lighting: "/live/Control_Panel/cue/Winners_Circle_Ready/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: winners_circle
       buzzers:
         buzz_timeout_seconds: 60.0    # the 60-second Winner's Circle clock
@@ -146,8 +146,8 @@ show:
     - name: "Outro"
       on_enter:
         audio_background: "music/Pyramid_Outro.mp3"
-        obs_scene: "Pyramid_Outro"
-        lighting: "/live/Control_Panel/cue/Winner_Celebration/activate"
+        obs_scene: "Pyramid"
+        lighting: "/live/Control_Panel/cue/Sparkle/activate"
       buzzers:
         all_enabled: false
 
@@ -262,17 +262,17 @@ state_machines:
 # ─────────────────────────────────────────────────────────────────────────────
 lighting:
   states:
-    idle:             "/live/Control_Panel/cue/Board_Reveal/activate"
-    armed:            "/live/Control_Panel/cue/Team_Ready/activate"
-    playing:          "/live/Control_Panel/cue/Subject_Clock/activate"
-    correct:          "/live/Control_Panel/cue/Item_Correct/activate"
-    cuckoo:           "/live/Control_Panel/cue/Cuckoo/activate"
-    subject_complete: "/live/Control_Panel/cue/Subject_Score/activate"
-    perfect:          "/live/Control_Panel/cue/Perfect_21/activate"
-    subject_win:      "/live/Control_Panel/cue/Circle_Correct/activate"
-    times_up:         "/live/Control_Panel/cue/Time_Up/activate"
-    board_cleared:    "/live/Control_Panel/cue/Winners_Circle_Win/activate"
-    game_over:        "/live/Control_Panel/cue/Winner_Reveal/activate"
+    idle:             "/live/Control_Panel/cue/Reveal/activate"
+    armed:            "/live/Control_Panel/cue/Game/activate"
+    playing:          "/live/Control_Panel/cue/Game/activate"
+    correct:          "/live/Control_Panel/cue/Correct/activate"
+    cuckoo:           "/live/Control_Panel/cue/Incorrect/activate"
+    subject_complete: "/live/Control_Panel/cue/Sparkle/activate"
+    perfect:          "/live/Control_Panel/cue/Sparkle/activate"
+    subject_win:      "/live/Control_Panel/cue/Sparkle/activate"
+    times_up:         "/live/Control_Panel/cue/Buzzer_Timeout/activate"
+    board_cleared:    "/live/Control_Panel/cue/Sparkle/activate"
+    game_over:        "/live/Control_Panel/cue/Sparkle/activate"
     clear:            "/live/*/cue/*/deactivate 0"
 
 
@@ -310,14 +310,14 @@ obs:
   # Momentary cue states (correct/cuckoo/subject_win) are intentionally omitted
   # so the gameplay scene stays put while sound + light cues fire over it.
   states:
-    idle:             "Pyramid_Board"
-    armed:            "Pyramid_Team_Ready"
-    playing:          "Pyramid_Subject_Play"
-    subject_complete: "Pyramid_Subject_Score"
-    perfect:          "Pyramid_Perfect_21"
-    times_up:         "Pyramid_Time_Up"
-    board_cleared:    "Pyramid_Winners_Circle_Win"
-    game_over:        "Pyramid_Game_Over"
+    idle:             "Pyramid"
+    armed:            "Pyramid"
+    playing:          "Pyramid"
+    subject_complete: "Pyramid"
+    perfect:          "Pyramid"
+    times_up:         "Pyramid"
+    board_cleared:    "Pyramid"
+    game_over:        "Pyramid"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -615,47 +615,12 @@ control_surface:
                     action: cancel
                     label: "Cancel"
                     color: "#552222"
-            # OBS sub-page
             button_9:
-              type: page
-              label: "OBS"
-              fa_icon: "video"
+              type: show_browser
+              label: "Shows"
+              fa_icon: "list"
               fa_size: 26
-              color: "#332211"
-              page:
-                buttons:
-                  button_0:
-                    type: obs_scene
-                    label: "Intro"
-                    scene: "Pyramid_Intro"
-                  button_1:
-                    type: obs_scene
-                    label: "Board"
-                    scene: "Pyramid_Board"
-                  button_2:
-                    type: obs_scene
-                    label: "Subject"
-                    scene: "Pyramid_Subject_Play"
-                  button_3:
-                    type: obs_scene
-                    label: "Score"
-                    scene: "Pyramid_Subject_Score"
-                  button_4:
-                    type: obs_scene
-                    label: "Circle"
-                    scene: "Pyramid_Winners_Circle"
-                  button_5:
-                    type: obs_scene
-                    label: "Circle Win"
-                    scene: "Pyramid_Winners_Circle_Win"
-                  button_6:
-                    type: obs_scene
-                    label: "Game Over"
-                    scene: "Pyramid_Game_Over"
-                  button_7:
-                    type: obs_scene
-                    label: "Outro"
-                    scene: "Pyramid_Outro"
+              color: "#223322"
             # Lights sub-page
             button_11:
               type: page
@@ -668,11 +633,11 @@ control_surface:
                   button_0:
                     type: lighting
                     label: "Board"
-                    osc: "/live/Control_Panel/cue/Board_Reveal/activate"
+                    osc: "/live/Control_Panel/cue/Reveal/activate"
                   button_1:
                     type: lighting
                     label: "Clock"
-                    osc: "/live/Control_Panel/cue/Subject_Clock/activate"
+                    osc: "/live/Control_Panel/cue/Game/activate"
                   button_2:
                     type: lighting
                     label: "Reveal"
@@ -680,21 +645,21 @@ control_surface:
                   button_3:
                     type: lighting
                     label: "Correct"
-                    osc: "/live/Control_Panel/cue/Item_Correct/activate"
+                    osc: "/live/Control_Panel/cue/Correct/activate"
                     color: "#004400"
                   button_4:
                     type: lighting
                     label: "Circle"
-                    osc: "/live/Control_Panel/cue/Winners_Circle_Ready/activate"
+                    osc: "/live/Control_Panel/cue/Game/activate"
                   button_5:
                     type: lighting
                     label: "Jackpot"
-                    osc: "/live/Control_Panel/cue/Winners_Circle_Win/activate"
+                    osc: "/live/Control_Panel/cue/Sparkle/activate"
                     color: "#332200"
                   button_6:
                     type: lighting
                     label: "Winner"
-                    osc: "/live/Control_Panel/cue/Winner_Reveal/activate"
+                    osc: "/live/Control_Panel/cue/Sparkle/activate"
                   button_7:
                     type: lighting
                     label: "Clear All"

@@ -20,21 +20,21 @@ show:
     - name: "Intro"
       on_enter:
         audio_background: "music/Trivia_Theme.mp3"
-        obs_scene: "Trivia_Intro"
-        lighting: "/palette/Intro/activate"
+        obs_scene: "QuizShow"
+        lighting: "/live/Control_Panel/cue/Sparkle/activate"
       buzzers:
         all_enabled: false
 
     - name: "Round 1"
       on_enter:
-        obs_scene: "Trivia_Round1_Board"
-        lighting: "/palette/Idle/activate"
+        obs_scene: "QuizShow"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       # uses the default `buzz_timeout` machine
 
     - name: "Round 2"
       on_enter:
-        obs_scene: "Trivia_Round2_Board"
-        lighting: "/palette/Idle/activate"
+        obs_scene: "QuizShow"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       # same buzz-in play as Round 1 — a second set of questions
 
     # ── Final Jeopardy Question ──────────────────────────────────────────────
@@ -45,8 +45,8 @@ show:
     - name: "Final Jeopardy Question"
       on_enter:
         audio_background: "music/Trivia_Final_Question.mp3"
-        obs_scene: "Trivia_Final_Category"
-        lighting: "/palette/FinalCategory/activate"
+        obs_scene: "QuizShow"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: final_jeopardy
       buzzers:
         all_enabled: false
@@ -57,8 +57,8 @@ show:
     # it); when it expires — or the host presses Reveal — the answer is shown.
     - name: "Final Jeopardy"
       on_enter:
-        obs_scene: "Trivia_Final"
-        lighting: "/palette/FinalThink/activate"
+        obs_scene: "QuizShow"
+        lighting: "/live/Control_Panel/cue/Game/activate"
       state_machine: final_jeopardy
       buzzers:
         buzz_timeout_seconds: 30.0    # the think clock
@@ -67,8 +67,8 @@ show:
     - name: "Outro"
       on_enter:
         audio_background: "music/Trivia_Outro.mp3"
-        obs_scene: "Trivia_Outro"
-        lighting: "/palette/GameOver/activate"
+        obs_scene: "QuizShow"
+        lighting: "/live/Control_Panel/cue/Sparkle/activate"
       buzzers:
         all_enabled: false
 
@@ -135,21 +135,21 @@ state_machines:
 
 lighting:
   states:
-    idle:          "/palette/Idle/activate"
-    locked:        "/palette/Locked/activate"
-    correct:       "/palette/Correct/activate"
-    incorrect:     "/palette/Incorrect/activate"
-    allow_next:    "/palette/Idle/activate"
-    buzz_timeout:  "/palette/Timeout/activate"
-    round_start:   "/palette/RoundStart/activate"
-    thinking:      "/palette/FinalThink/activate"
-    reveal:        "/palette/Reveal/activate"
-    game_over:     "/palette/GameOver/activate"
-    clear:         "/palette/Idle/activate"
-    player_1_buzz: "/palette/Buzz_P1/activate"
-    player_2_buzz: "/palette/Buzz_P2/activate"
-    player_3_buzz: "/palette/Buzz_P3/activate"
-    player_4_buzz: "/palette/Buzz_P4/activate"
+    idle:          "/live/Control_Panel/cue/Game/activate"
+    locked:        "/live/Control_Panel/cue/Green_Buzz/activate"
+    correct:       "/live/Control_Panel/cue/Correct/activate"
+    incorrect:     "/live/Control_Panel/cue/Incorrect/activate"
+    allow_next:    "/live/Control_Panel/cue/Game/activate"
+    buzz_timeout:  "/live/Control_Panel/cue/Buzzer_Timeout/activate"
+    round_start:   "/live/Control_Panel/cue/Game/activate"
+    thinking:      "/live/Control_Panel/cue/Game/activate"
+    reveal:        "/live/Control_Panel/cue/Reveal/activate"
+    game_over:     "/live/Control_Panel/cue/Sparkle/activate"
+    clear:         "/live/Control_Panel/cue/Game/activate"
+    player_1_buzz: "/live/Control_Panel/cue/Buzz_Left/activate"
+    player_2_buzz: "/live/Control_Panel/cue/Buzz_Right/activate"
+    player_3_buzz: "/live/Control_Panel/cue/Green_Buzz/activate"
+    player_4_buzz: "/live/Control_Panel/cue/Green_Buzz/activate"
 
 audio:
   default_background_volume: 0.7
@@ -180,16 +180,16 @@ audio:
 
 obs:
   states:
-    idle:          "Idle"
-    locked:        "Buzz_Locked"
-    correct:       "Correct"
-    incorrect:     "Incorrect"
-    allow_next:    "Allow_Next"
-    buzz_timeout:  "Buzz_Timeout"
-    round_start:   "Round_Start"
-    thinking:      "Final_Think"
-    reveal:        "Final_Reveal"
-    game_over:     "Game_Over"
+    idle:          "QuizShow"
+    locked:        "QuizShow"
+    correct:       "QuizShow"
+    incorrect:     "QuizShow"
+    allow_next:    "QuizShow"
+    buzz_timeout:  "QuizShow"
+    round_start:   "QuizShow"
+    thinking:      "QuizShow"
+    reveal:        "QuizShow"
+    game_over:     "QuizShow"
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Stream Deck control surface  (Elgato MK.2 / Original, 3 × 5, keys 0–14)
@@ -411,43 +411,12 @@ control_surface:
                     type: reset_buzzer
                     label: "Reset"
                     color: "#552222"
-            # OBS sub-page
             button_8:
-              type: page
-              label: "OBS"
-              fa_icon: "video"
+              type: show_browser
+              label: "Shows"
+              fa_icon: "list"
               fa_size: 26
-              color: "#332211"
-              page:
-                buttons:
-                  button_0:
-                    type: obs_scene
-                    label: "Intro"
-                    scene: "Trivia_Intro"
-                  button_1:
-                    type: obs_scene
-                    label: "Round 1"
-                    scene: "Trivia_Round1_Board"
-                  button_2:
-                    type: obs_scene
-                    label: "Round 2"
-                    scene: "Trivia_Round2_Board"
-                  button_3:
-                    type: obs_scene
-                    label: "Final Q"
-                    scene: "Trivia_Final_Category"
-                  button_4:
-                    type: obs_scene
-                    label: "Final"
-                    scene: "Trivia_Final"
-                  button_5:
-                    type: obs_scene
-                    label: "Reveal"
-                    scene: "Final_Reveal"
-                  button_6:
-                    type: obs_scene
-                    label: "Outro"
-                    scene: "Trivia_Outro"
+              color: "#223322"
             # Lights sub-page
             button_9:
               type: page
@@ -460,29 +429,29 @@ control_surface:
                   button_0:
                     type: lighting
                     label: "Idle"
-                    osc: "/palette/Idle/activate"
+                    osc: "/live/Control_Panel/cue/Game/activate"
                   button_1:
                     type: lighting
                     label: "Correct"
-                    osc: "/palette/Correct/activate"
+                    osc: "/live/Control_Panel/cue/Correct/activate"
                     color: "#004400"
                   button_2:
                     type: lighting
                     label: "Wrong"
-                    osc: "/palette/Incorrect/activate"
+                    osc: "/live/Control_Panel/cue/Incorrect/activate"
                     color: "#440000"
                   button_3:
                     type: lighting
                     label: "Final"
-                    osc: "/palette/FinalThink/activate"
+                    osc: "/live/Control_Panel/cue/Game/activate"
                   button_4:
                     type: lighting
                     label: "Reveal"
-                    osc: "/palette/Reveal/activate"
+                    osc: "/live/Control_Panel/cue/Reveal/activate"
                   button_5:
                     type: lighting
                     label: "Winner"
-                    osc: "/palette/GameOver/activate"
+                    osc: "/live/Control_Panel/cue/Sparkle/activate"
             button_11:
               type: config_reload
               label: "Reload"
